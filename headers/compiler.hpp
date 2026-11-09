@@ -165,6 +165,26 @@ private:
         }
     }
 
+    // Conservative check of whether a statement guarantees that control flow
+    // cannot reach its end without hitting a 'ret'. Only simple, provable
+    // shapes are recognized; anything uncertain returns false, in which case
+    // emit_function_body appends an implicit return (dead code at worst).
+    bool ends_with_return(Stmt* stmt) {
+        if (dynamic_cast<ReturnStmt*>(stmt)) return true;
+        if (auto* block = dynamic_cast<BlockStmt*>(stmt)) {
+            if (block->statements.empty()) return false;
+            return ends_with_return(block->statements.back().get());
+        }
+        if (auto* if_stmt = dynamic_cast<IfStmt*>(stmt)) {
+            // Without an 'else' the code after the if is reachable, so both
+            // branches must return for the statement as a whole to return.
+            return if_stmt->else_branch
+                && ends_with_return(if_stmt->then_branch.get())
+                && ends_with_return(if_stmt->else_branch.get());
+        }
+        return false;
+    }
+
     void emit_function_body(FuncDecl* func, Bytecode& bytecode) {
         bytecode.function_addresses[func->name] = bytecode.code.size();
         
@@ -179,6 +199,16 @@ private:
             compile_stmt(body_stmt.get(), bytecode);
         }
         pop_scope();
+
+        // Always guarantee a return so control never falls off the end of a
+        // function into the next compiled function. When the body does not
+        // provably end in a 'ret' on every path, emit an implicit one that
+        // returns the default value, exactly like a bare 'ret;' does.
+        if (func->body.empty() || !ends_with_return(func->body.back().get())) {
+            int idx = bytecode.add_const((int64_t)0);
+            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            bytecode.emit(OpCode::OP_RETURN);
+        }
     }
 
     // Control flow
@@ -650,7 +680,9 @@ public:
         bytecode.code[jump_placeholder] = (main_addr >> 8) & 0xFF;
         bytecode.code[jump_placeholder + 1] = main_addr & 0xFF;
 
-        // Compile main body
+        // Compile main body. Unlike regular functions, main does not need an
+        // implicit OP_RETURN: the OP_HALT below guarantees execution stops
+        // here, so control can never fall through.
         for (const auto& stmt : functions["main"]->body) {
             compile_stmt(stmt.get(), bytecode);
         }
