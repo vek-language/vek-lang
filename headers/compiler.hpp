@@ -165,10 +165,8 @@ private:
         }
     }
 
-    // Conservative check of whether a statement guarantees that control flow
-    // cannot reach its end without hitting a 'ret'. Only simple, provable
-    // shapes are recognized; anything uncertain returns false, in which case
-    // emit_function_body appends an implicit return (dead code at worst).
+    // Conservative: returns true only when every path provably ends in 'ret'.
+    // Unknown shapes return false; callers then emit an implicit default return.
     bool ends_with_return(Stmt* stmt) {
         if (dynamic_cast<ReturnStmt*>(stmt)) return true;
         if (auto* block = dynamic_cast<BlockStmt*>(stmt)) {
@@ -176,8 +174,7 @@ private:
             return ends_with_return(block->statements.back().get());
         }
         if (auto* if_stmt = dynamic_cast<IfStmt*>(stmt)) {
-            // Without an 'else' the code after the if is reachable, so both
-            // branches must return for the statement as a whole to return.
+            // Both branches must return.
             return if_stmt->else_branch
                 && ends_with_return(if_stmt->then_branch.get())
                 && ends_with_return(if_stmt->else_branch.get());
@@ -200,10 +197,8 @@ private:
         }
         pop_scope();
 
-        // Always guarantee a return so control never falls off the end of a
-        // function into the next compiled function. When the body does not
-        // provably end in a 'ret' on every path, emit an implicit one that
-        // returns the default value, exactly like a bare 'ret;' does.
+        // Guarantee a return so control never falls through into the next function.
+        // If the body does not provably end in 'ret', emit an implicit default return.
         if (func->body.empty() || !ends_with_return(func->body.back().get())) {
             int idx = bytecode.add_const((int64_t)0);
             bytecode.emit(OpCode::OP_CONSTANT, idx);
@@ -686,7 +681,6 @@ public:
 
         // Compile main body. Unlike regular functions, main does not need an
         // implicit OP_RETURN: the OP_HALT below guarantees execution stops
-        // here, so control can never fall through.
         for (const auto& stmt : functions["main"]->body) {
             compile_stmt(stmt.get(), bytecode);
         }
