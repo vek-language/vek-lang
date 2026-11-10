@@ -1,6 +1,12 @@
+# Basic
 *.exe
 *.vek
 *.vkc
 
+# IDE
 .idea/
 .vscode/
+
+# CMake
+build/
+cmake-build-*/

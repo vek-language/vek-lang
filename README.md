@@ -3,7 +3,7 @@
 
 # VekLang
 ![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)
-![Language](https://img.shields.io/badge/Language-C%2B%2B17-purple.svg)
+![Language](https://img.shields.io/badge/Language-C%2B%2B20-purple.svg)
 ![Type](https://img.shields.io/badge/Type-Bytecode%20VM-success.svg)
 
 **Vek** is a fast, statically-typed, bytecode-compiled programming language with its own custom stack-based Virtual Machine (similar to Java and the JVM). 
@@ -77,7 +77,7 @@ func main() int {
 - [ ] Organize src .cpp files instead of using .hpp only.
 - [ ] Add classes.
 - [x] Implement while/for loops.
-- [ ] CMake file.
+- [x] CMake file.
 - [x] Compiler and VM supposed to be different things. (_vekvm {filename}.vekbc_ to run, _vek run/build_ - developer tool) (turn .vekbc is a bytecode file, with magic, 3 bytes in header.)
 
 ## Acknowledgements

@@ -42,27 +42,6 @@ private:
         return val;
     }
 
-    // Shared truthiness rules for OP_NOT, OP_JUMP_IF_FALSE and OP_JUMP_IF_TRUE.
-    // C-style convention: falsy values are `false`, zero (int32/int64/float/double),
-    // '\0', the empty string, a null or empty array, and monostate (null value).
-    // Strings and arrays are truthy when they are non-empty (e.g. `not ""` is true,
-    // `not []` is true). Everything else is truthy.
-    bool is_truthy(const Value& v) {
-        if (holds_alternative<bool>(v)) return get<bool>(v);
-        if (holds_alternative<int32_t>(v)) return get<int32_t>(v) != 0;
-        if (holds_alternative<int64_t>(v)) return get<int64_t>(v) != 0;
-        if (holds_alternative<float>(v)) return get<float>(v) != 0.0f;
-        if (holds_alternative<double>(v)) return get<double>(v) != 0.0;
-        if (holds_alternative<char>(v)) return get<char>(v) != '\0';
-        if (holds_alternative<string>(v)) return !get<string>(v).empty();
-        if (holds_alternative<shared_ptr<ArrayObject>>(v)) {
-            const auto& arr = get<shared_ptr<ArrayObject>>(v);
-            return arr && !arr->elements.empty();
-        }
-        // monostate (null) is falsy
-        return false;
-    }
-
     // Helpers
     string value_to_string(const Value& v) {
         if (holds_alternative<string>(v)) return get<string>(v);
