@@ -39,53 +39,66 @@ string read_file(const string& path) {
     return buffer.str();
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 3) {
-        cerr << "====================================================" << endl;
-        cerr << "Usage:" << endl;
-        cerr << "vek build <file.vek> - Compile for release" << endl;
-        cerr << "vek run <file.vek>   - Run development version" << endl;
-        cerr << "====================================================" << endl;
+static void print_usage(std::ostream& os) {
+    os << "====================================================\n"
+          "Usage:\n"
+          "  vek version            - Print compiler version\n"
+          "  vek build <file.vek>   - Compile <file>.vek to <file>.vkc\n"
+          "  vek run   <file.vek>   - Compile and execute\n"
+          "====================================================\n";
+}
 
+int main(int argc, char* argv[]) {
+    if (argc < 2) { print_usage(cerr); return 1; }
+
+    const string command = argv[1];
+
+    if (command == "version") {
+        cout << "VEK language 0.0.1" << endl;
+        return 0;
+    }
+    if (command == "help" || command == "--help" || command == "-h") {
+        print_usage(cout);
+        return 0;
+    }
+
+    // Validate the command
+    if (command != "build" && command != "run") {
+        cerr << "Unknown command: " << command << "\n";
+        print_usage(cerr);
         return 1;
     }
 
-    string command = argv[1];
-    string path = argv[2];
+    if (argc < 3) {
+        cerr << "error: '" << command << "' requires a <file.vek> argument\n";
+        print_usage(cerr);
+        return 1;
+    }
+
+    const string path = argv[2];
 
     try {
-        // Read source
         std::string source = read_file(path);
 
-        // Compile
         Lexer lexer(source);
         auto tokens = lexer.lex();
         Parser parser(tokens);
         auto ast = parser.parse_program();
+
         Compiler compiler;
         Bytecode bytecode = compiler.compile(ast);
 
-        // Handle the command
         if (command == "build") {
-            // Save to a .vekbc
-            fs::path p(path);
-            std::string out_path = p.stem().string() + ".vkc";
-
-            Serializer::save(bytecode, out_path);
-            std::cout << "Successfully compiled to " << out_path << "\n";
-            
-        } else if (command == "run") {
-            // Execute
+            fs::path out = fs::path(path).replace_extension(".vkc");
+            Serializer::save(bytecode, out.string());
+            cout << "Successfully compiled to " << out.string() << "\n";
+        } else {
             VM vm;
             vm.run(bytecode);
-            
-        } else {
-            std::cerr << "Unknown command: " << command << "\n";
-            return 1;
         }
 
     } catch (const std::exception& e) {
-        std::cerr << "\n[Error] " << e.what() << "\n";
+        cerr << "\n[Error] " << e.what() << "\n";
         return 1;
     }
 
