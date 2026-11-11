@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) {
 
     const string command = argv[1];
 
-    if (command == "version") {
+    if (command == "version" || command == "--version" || command == "-v") {
         cout << "VEK language 0.0.1" << endl;
         return 0;
     }
