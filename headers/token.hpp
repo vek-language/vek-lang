@@ -14,7 +14,7 @@ enum class TokenType {
     // Basic
     LOAD, CLASS, PUBLIC, PRIVATE, PROTECTED, THIS,
     
-    LET, CONST, FUNC, 
+    LET, REF, CONST, FUNC, 
     IF, ELSE, WHILE, FOR,    
     PRINT, RET,
     

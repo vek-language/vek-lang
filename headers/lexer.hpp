@@ -24,6 +24,7 @@ inline const unordered_map<std::string, TokenType> keywords = {
     {"protected", TokenType::PROTECTED},
 
     {"let", TokenType::LET},
+    {"ref", TokenType::REF},
     {"const", TokenType::CONST},
 
     {"func", TokenType::FUNC},

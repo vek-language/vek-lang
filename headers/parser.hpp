@@ -284,9 +284,10 @@ private:
         vector<Param> params;
         if (!check(TokenType::RPAREN)) {
             do {
+                bool is_ref = match(TokenType::REF);
                 TokenType p_type = parse_type();
                 Token p_name = consume(TokenType::IDENTIFIER, "Expected parameter name");
-                params.emplace_back(p_type, p_name.text);
+                params.emplace_back(p_type, p_name.text, is_ref);
             } while (match(TokenType::COMMA));
         }
         consume(TokenType::RPAREN, "Expected ')'");

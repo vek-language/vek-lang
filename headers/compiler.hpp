@@ -188,7 +188,7 @@ private:
         push_scope();
         for (const auto& param : func->params) {
             int name_idx = bytecode.add_const(param.name);
-            bytecode.emit(OpCode::OP_DEFINE_VAR, name_idx);
+            bytecode.emit(param.is_ref ? OpCode::OP_DEFINE_REF_VAR : OpCode::OP_DEFINE_VAR, name_idx);
             set_var_type(param.name, token_to_type(param.type));
         }
         
@@ -494,12 +494,34 @@ private:
         }
 
         if (auto* call = dynamic_cast<CallExpr*>(expr)) {
-            for (auto it = call->arguments.rbegin(); it != call->arguments.rend(); ++it) {
-                compile_expr(it->get(), bytecode, Type::UNKNOWN);
+            FuncDecl* fn = nullptr;
+            if (functions.count(call->name)) fn = functions[call->name];
+
+            if (fn && fn->params.size() != call->arguments.size()) {
+                throw runtime_error("Function '" + call->name + "' expects " +
+                    std::to_string(fn->params.size()) + " args, got " +
+                    std::to_string(call->arguments.size()));
             }
+
+            for (size_t i = 0; i < call->arguments.size(); i++) {
+                size_t idx = call->arguments.size() - 1 - i;   // reverse iteration
+                auto& arg = call->arguments[idx];
+                bool is_ref = fn && fn->params[idx].is_ref;
+
+                if (is_ref) {
+                    auto* v = dynamic_cast<VariableExpr*>(arg.get());
+                    if (!v) throw runtime_error("Ref argument must be a variable");
+                    int name_idx = bytecode.add_const(v->name);
+                    bytecode.emit(OpCode::OP_LOAD_REF, name_idx);
+                } else {
+                    compile_expr(arg.get(), bytecode, Type::UNKNOWN);
+                }
+            }
+
             int name_idx = bytecode.add_const(call->name);
             bytecode.emit(OpCode::OP_CALL, name_idx, call->arguments.size());
-            return function_return_types.count(call->name) ? function_return_types[call->name] : Type::UNKNOWN;
+            return function_return_types.count(call->name)
+                ? function_return_types[call->name] : Type::UNKNOWN;
         }
 
         if (auto* unary = dynamic_cast<UnaryExpr*>(expr)) {

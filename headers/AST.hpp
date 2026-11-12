@@ -170,7 +170,8 @@ struct ForStmt : Stmt {
 struct Param {
     TokenType type;
     string name;
-    Param(TokenType token_type, string n) : type(token_type), name(move(n)) {}
+    bool is_ref = false;
+    Param(TokenType token_type, string n, bool r = false) : type(token_type), name(move(n)), is_ref(r) {}
 };
 
 struct ClassDecl : Stmt {

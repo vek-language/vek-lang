@@ -25,7 +25,7 @@ private:
     static constexpr size_t STACK_SIZE = 4096;
 
     vector<Value> stack;
-    vector<unordered_map<string, Value>> scopes;
+    vector<unordered_map<string, CellPtr>> scopes;
     
     vector<size_t> call_stack;
     vector<size_t> scope_base_stack;
@@ -247,25 +247,28 @@ public:
                 case OpCode::OP_DEFINE_VAR: {
                     uint8_t name_index = bytecode.code[ip++];
                     string var_name = get<string>(bytecode.constants[name_index]);
-                    scopes.back()[var_name] = pop();
+                    auto cell = make_shared<Cell>();
+                    cell->value = pop();
+                    scopes.back()[var_name] = cell;   
                     break;
                 }
                 case OpCode::OP_SAVE: {
                     uint8_t name_index = bytecode.code[ip++];
                     string var_name = get<string>(bytecode.constants[name_index]);
                     Value val = pop();
-                    
                     bool found = false;
-                    for (int i = scopes.size() - 1; i >= 0; i--) {
-                        if (scopes[i].find(var_name) != scopes[i].end()) {
-                            scopes[i][var_name] = val;
+                    for (int i = (int)scopes.size() - 1; i >= 0; i--) {
+                        auto it = scopes[i].find(var_name);
+                        if (it != scopes[i].end()) {
+                            it->second->value = val;
                             found = true;
                             break;
                         }
                     }
-                    
                     if (!found) {
-                        scopes.back()[var_name] = val;
+                        auto cell = make_shared<Cell>();
+                        cell->value = val;
+                        scopes.back()[var_name] = cell;
                     }
                     break;
                 }
@@ -276,7 +279,7 @@ public:
                     for (; i >= 0; i--) {
                         auto it = scopes[i].find(var_name);
                         if (it != scopes[i].end()) {
-                            push(it->second);
+                            push(it->second->value); 
                             break;
                         }
                     }
@@ -285,6 +288,32 @@ public:
                     }
                     break;
                 }
+
+                case OpCode::OP_LOAD_REF: {
+                    uint8_t name_index = bytecode.code[ip++];
+                    string var_name = get<string>(bytecode.constants[name_index]);
+                    int i = (int)scopes.size() - 1;
+                    for (; i >= 0; i--) {
+                        auto it = scopes[i].find(var_name);
+                        if (it != scopes[i].end()) {
+                            push(it->second); // pushes CellPtr
+                            break;
+                        }
+                    }
+                    if (i < 0) throw runtime_error("Undefined variable '" + var_name + "'");
+                    break;
+                }
+
+                case OpCode::OP_DEFINE_REF_VAR: {
+                    uint8_t name_index = bytecode.code[ip++];
+                    string var_name = get<string>(bytecode.constants[name_index]);
+                    Value v = pop();
+                    if (!holds_alternative<CellPtr>(v))
+                        throw runtime_error("Ref parameter '" + var_name + "' requires a reference");
+                    scopes.back()[var_name] = get<CellPtr>(v);  // bind. No new cell
+                    break;
+                }
+
                 case OpCode::OP_CAST: {
                     uint8_t target_type_id = bytecode.code[ip++];
                     TokenType target_type = static_cast<TokenType>(target_type_id);
