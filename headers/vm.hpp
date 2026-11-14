@@ -25,7 +25,7 @@ private:
     static constexpr size_t STACK_SIZE = 4096;
 
     vector<Value> stack;
-    vector<unordered_map<string, CellPtr>> scopes;
+    vector<unordered_map<string, shared_ptr<Cell>>> scopes;
     
     vector<size_t> call_stack;
     vector<size_t> scope_base_stack;
@@ -296,7 +296,7 @@ public:
                     for (; i >= 0; i--) {
                         auto it = scopes[i].find(var_name);
                         if (it != scopes[i].end()) {
-                            push(it->second); // pushes CellPtr
+                            push(it->second); // pushes shared_ptr<Cell>
                             break;
                         }
                     }
@@ -308,9 +308,9 @@ public:
                     uint8_t name_index = bytecode.code[ip++];
                     string var_name = get<string>(bytecode.constants[name_index]);
                     Value v = pop();
-                    if (!holds_alternative<CellPtr>(v))
+                    if (!holds_alternative<shared_ptr<Cell>>(v))
                         throw runtime_error("Ref parameter '" + var_name + "' requires a reference");
-                    scopes.back()[var_name] = get<CellPtr>(v);  // bind. No new cell
+                    scopes.back()[var_name] = get<shared_ptr<Cell>>(v);  // bind. No new cell
                     break;
                 }
 
@@ -487,10 +487,79 @@ public:
                     break;
                 }
 
+                // OOP
+                case OpCode::OP_NEW_STRUCT: {
+                    uint8_t name_idx = bytecode.code[ip++];
+                    uint8_t count = bytecode.code[ip++];
+                    
+                    string struct_name = get<string>(bytecode.constants[name_idx]);
+                    auto instance = std::make_shared<StructInstance>();
+                    instance->struct_name = struct_name;
+
+                    for (int i = 0; i < count; i++) {
+                        Value field_val = pop();
+                        string field_name = get<string>(pop());
+                        instance->fields[field_name] = field_val;
+                    }
+                    
+                    push(instance);
+                    break;
+                }
+
+                case OpCode::OP_GET_MEMBER: {
+                    uint8_t field_idx = bytecode.code[ip++];
+                    string field_name = get<string>(bytecode.constants[field_idx]);
+                    
+                    Value obj = pop();
+                    if (!holds_alternative<shared_ptr<StructInstance>>(obj)) {
+                        throw runtime_error("Not a struct");
+                    }
+                    
+                    auto instance = get<shared_ptr<StructInstance>>(obj);
+                    push(instance->fields[field_name]);
+                    break;
+                }
+
+                case OpCode::OP_SET_MEMBER: {
+                    uint8_t field_idx = bytecode.code[ip++];
+                    string field_name = get<string>(bytecode.constants[field_idx]);
+                    
+                    Value val = pop();
+                    Value obj = pop();
+                    
+                    auto instance = get<shared_ptr<StructInstance>>(obj);
+                    instance->fields[field_name] = val;
+                    break;
+                }
+
                 // System functions
                 case OpCode::OP_PRINT: {
                     Value val = pop();
                     std::cout << value_to_string(val) << "\n";
+                    break;
+                }
+
+                case OpCode::OP_NATIVE_CALL: {
+                    uint16_t func_id = (uint16_t(bytecode.code[ip]) << 8) | bytecode.code[ip + 1];
+                    ip += 2;
+                    uint8_t argc = bytecode.code[ip++];
+
+                    if (func_id >= bytecode.natives.size())
+                        throw runtime_error("Bad native id " + std::to_string(func_id));
+                    const NativeSymbol& sym = bytecode.natives[func_id];
+
+                    if (argc < sym.min_arity || argc > sym.max_arity)
+                        throw runtime_error(sym.name + ": expected " +
+                            (sym.min_arity == sym.max_arity
+                                ? std::to_string(sym.min_arity)
+                                : std::to_string(sym.min_arity) + ".." + std::to_string(sym.max_arity)) +
+                            " args, got " + std::to_string(argc));
+
+                    std::vector<Value> args(argc);
+                    for (int i = argc - 1; i >= 0; --i) args[i] = pop();
+                    
+                    Value result = sym.func(std::move(args));
+                    push(std::move(result));
                     break;
                 }
                 

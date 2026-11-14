@@ -2,6 +2,8 @@
 
 #include <string>
 #include <vector>
+#include <functional>
+#include <memory>
 #include <cstdint>
 #include <variant>
 #include <unordered_map>
@@ -13,16 +15,34 @@ using std::vector;
 using std::unordered_map;
 using std::shared_ptr;
 
+struct StructInstance;
 struct ArrayObject;
 struct Cell;
+struct NativeHandle { void* ptr; };
 
-using CellPtr = std::shared_ptr<Cell>;
-using Value = std::variant<
+using Value = variant<
     std::monostate, 
     int32_t, int64_t, float, double, bool, char, string, 
-    shared_ptr<ArrayObject>, 
-    CellPtr
+    shared_ptr<ArrayObject>,
+    shared_ptr<StructInstance>, 
+    shared_ptr<Cell>,
+    shared_ptr<NativeHandle>
 >;
+inline Value nil_value() { return std::monostate{}; }
+using NativeFunc = std::function<Value(vector<Value>)>;
+
+struct NativeSymbol {
+    std::string name;
+    NativeFunc func;
+    int min_arity;
+    int max_arity;
+    Type ret_type;
+};
+
+struct StructInstance {
+    string struct_name;
+    unordered_map<string, Value> fields;
+};
 
 struct ArrayObject {
     vector<Value> elements;
@@ -74,17 +94,23 @@ enum class OpCode {
     OP_JUMP_IF_FALSE = 0x23,
     OP_JUMP_IF_TRUE = 0x24,
 
-    // System Functions
-    OP_PRINT = 0x30,
-
     // Arrays
-    OP_NEW_ARRAY = 0x40,
+    OP_NEW_ARRAY = 0x30,
 
-    OP_GET_INDEX = 0x41,
-    OP_SET_INDEX = 0x42, 
+    OP_GET_INDEX = 0x31,
+    OP_SET_INDEX = 0x32, 
 
-    OP_ARRAY_PUSH = 0x43,
-    OP_ARRAY_POP = 0x44,
+    OP_ARRAY_PUSH = 0x33,
+    OP_ARRAY_POP = 0x34,
+
+    // OOP
+    OP_NEW_STRUCT = 0x40,
+    OP_GET_MEMBER = 0x41,
+    OP_SET_MEMBER = 0x42,
+
+    // System Functions
+    OP_PRINT = 0x90,
+    OP_NATIVE_CALL = 0x91,
 
     // End of code
     OP_HALT = 0xFF,
@@ -95,6 +121,22 @@ struct Bytecode
     vector<uint8_t> code;
     vector<Value> constants;
     unordered_map<string, size_t> function_addresses;
+
+    vector<NativeSymbol>                 natives;
+    unordered_map<string, uint16_t> native_index;
+
+    uint16_t register_native(std::string name, NativeFunc func,
+        int min_arity, int max_arity, Type ret_type) {
+        if (auto it = native_index.find(name); it != native_index.end())
+            return it->second;
+        if (natives.size() >= 65535)
+            throw std::runtime_error("Too many natives (>=65535)");
+        uint16_t id = static_cast<uint16_t>(natives.size());
+        natives.push_back({std::move(name), std::move(func),
+                           min_arity, max_arity, ret_type});
+        native_index[natives.back().name] = id;
+        return id;
+    }
 
     void write(uint8_t byte) {
         code.push_back(byte);

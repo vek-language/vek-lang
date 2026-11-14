@@ -10,9 +10,10 @@ struct SourceLocation {
     size_t offset;
 };
 
+enum class Type { INT32, INT64, FLOAT32, FLOAT64, BOOL, CHAR, STR, VOID, ARRAY, UNKNOWN };
 enum class TokenType {
     // Basic
-    LOAD, CLASS, PUBLIC, PRIVATE, PROTECTED, THIS,
+    LOAD, CLASS, STRUCT, PUBLIC, PRIVATE, PROTECTED, THIS,
     
     LET, REF, CONST, FUNC, 
     IF, ELSE, WHILE, FOR,    
@@ -40,7 +41,7 @@ enum class TokenType {
     LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET, DOT,
     
     // Syntax
-    SEMICOLON, COLON_COLON, COMMA,
+    SEMICOLON, COLON_COLON, COLON, COMMA,
 };
 
 struct Token {

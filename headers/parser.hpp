@@ -116,6 +116,7 @@ private:
             return parse_declaration();
         }
         
+        if (check(TokenType::STRUCT)) return parse_struct();
         if (check(TokenType::CLASS)) return parse_class();
         if (check(TokenType::FUNC)) return parse_function();
         if (check(TokenType::IF)) return parse_if();
@@ -207,6 +208,24 @@ private:
 
         consume(TokenType::RBRACE, "Expected '}' after class declaration");
         return class_decl;
+    }
+
+    unique_ptr<Stmt> parse_struct() {
+        consume(TokenType::STRUCT, "Expected 'struct'");
+        Token name = consume(TokenType::IDENTIFIER, "Expected struct name");
+        consume(TokenType::LBRACE, "Expected '{'");
+
+        vector<Param> fields;
+        while (!check(TokenType::RBRACE) && !is_at_end()) {
+            consume(TokenType::LET, "Expected 'let' for struct field");
+            TokenType type = parse_type();
+            Token field_name = consume(TokenType::IDENTIFIER, "Expected field name");
+            consume(TokenType::SEMICOLON, "Expected ';'");
+            fields.emplace_back(type, field_name.text);
+        }
+
+        consume(TokenType::RBRACE, "Expected '}'");
+        return make_unique<StructDecl>(name.text, move(fields));
     }
     
     unique_ptr<Stmt> parse_if() {
@@ -312,6 +331,11 @@ private:
         if (match(TokenType::CHAR)) return TokenType::CHAR;
         if (match(TokenType::BOOL)) return TokenType::BOOL;
         if (match(TokenType::VOID)) return TokenType::VOID;
+
+        if (match(TokenType::IDENTIFIER)) {
+            return TokenType::IDENTIFIER; 
+        }
+
         throw runtime_error("Expected a type");
     }
 
@@ -420,20 +444,22 @@ private:
                 auto index = parse_logic();
                 consume(TokenType::RBRACKET, "Expected ']'");
                 expr = make_unique<ArrayAccessExpr>(move(expr), move(index));
-            } 
-            else if (match(TokenType::DOT)) {
-                Token method = consume(TokenType::IDENTIFIER, "Expected method name");
-                consume(TokenType::LPAREN, "Expected '('");
-                vector<unique_ptr<Expr>> args;
-                if (!check(TokenType::RPAREN)) {
-                    do {
-                        args.push_back(parse_logic());
-                    } while (match(TokenType::COMMA));
+            } else if (match(TokenType::DOT)) {
+                Token name = consume(TokenType::IDENTIFIER, "Expected field or method name");
+                
+                if (match(TokenType::LPAREN)) {
+                    // It's a method call
+                    vector<unique_ptr<Expr>> args;
+                    if (!check(TokenType::RPAREN)) {
+                        do { args.push_back(parse_logic()); } while (match(TokenType::COMMA));
+                    }
+                    consume(TokenType::RPAREN, "Expected ')'");
+                    expr = make_unique<MethodCallExpr>(move(expr), name.text, move(args));
+                } else {
+                    // It's a field access
+                    expr = make_unique<FieldAccessExpr>(move(expr), name.text);
                 }
-                consume(TokenType::RPAREN, "Expected ')'");
-                expr = make_unique<MethodCallExpr>(move(expr), method.text, move(args));
-            } 
-            else {
+            } else {
                 break;
             }
         }
@@ -484,6 +510,20 @@ private:
         if (match(TokenType::CHAR_LITERAL)) return make_unique<CharLiteral>(previous().text[0]);
 
         if (match(TokenType::LBRACE)) {
+            // Check for struct literal
+            if (check(TokenType::IDENTIFIER) && current + 1 < tokens.size() && tokens[current + 1].type == TokenType::COLON) {
+                vector<pair<string, unique_ptr<Expr>>> inits;
+                do {
+                    Token field_name = consume(TokenType::IDENTIFIER, "Expected field name");
+                    consume(TokenType::COLON, "Expected ':'");
+                    auto val = parse_logic();
+                    inits.emplace_back(field_name.text, move(val));
+                } while (match(TokenType::COMMA));
+                consume(TokenType::RBRACE, "Expected '}'");
+                return make_unique<StructLiteral>("", move(inits)); // Name inferred by compiler
+            }
+
+            // Array literal
             vector<unique_ptr<Expr>> elements;
             if (!check(TokenType::RBRACE)) {
                 do {

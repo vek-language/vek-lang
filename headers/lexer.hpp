@@ -16,7 +16,9 @@ using std::string;
 
 inline const unordered_map<std::string, TokenType> keywords = {
     {"load", TokenType::LOAD},
+    
     {"class", TokenType::CLASS},
+    {"struct", TokenType::STRUCT},
 
     {"this", TokenType::THIS},
     {"public", TokenType::PUBLIC},
@@ -209,7 +211,7 @@ public:
                         next(); 
                         tokens.push_back(make_token(TokenType::COLON_COLON)); 
                     } else { 
-                        throw runtime_error("Unexpected character ':'"); 
+                        tokens.push_back(make_token(TokenType::COLON));
                     }
                     break;
                 

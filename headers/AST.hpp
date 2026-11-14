@@ -9,6 +9,7 @@ using std::string;
 using std::vector;
 using std::unique_ptr;
 using std::move;
+using std::pair;
 
 struct Expr { virtual ~Expr() = default; };
 
@@ -20,6 +21,14 @@ struct BoolLiteral : Expr { bool value; BoolLiteral(bool value) : value(value) {
 struct StringLiteral : Expr { string value; StringLiteral(string value) : value(move(value)) {} };
 struct CharLiteral : Expr { char value; CharLiteral(char value) : value(value) {} };
 
+struct StructLiteral : Expr {
+    string struct_name;
+    vector<pair<string, unique_ptr<Expr>>> initializers;
+
+    StructLiteral(string n, vector<pair<string, unique_ptr<Expr>>> init)
+        : struct_name(move(n)), initializers(move(init)) {}
+};
+
 struct VariableExpr : Expr {
     string name;
     VariableExpr(string n) 
@@ -29,6 +38,7 @@ struct VariableExpr : Expr {
 struct FieldAccessExpr : Expr {
     unique_ptr<Expr> object;
     string field;
+
     FieldAccessExpr(unique_ptr<Expr> obj, string f)
         : object(move(obj)), field(move(f)) {}
 };
@@ -173,6 +183,15 @@ struct Param {
     bool is_ref = false;
     Param(TokenType token_type, string n, bool r = false) : type(token_type), name(move(n)), is_ref(r) {}
 };
+
+struct StructDecl : Stmt {
+    string name;
+    vector<Param> fields;
+    
+    StructDecl(string n, vector<Param> f) 
+        : name(move(n)), fields(move(f)) {}
+};
+
 
 struct ClassDecl : Stmt {
     string name;

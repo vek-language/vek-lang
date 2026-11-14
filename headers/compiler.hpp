@@ -20,11 +20,11 @@ using std::string;
 using std::unordered_map;
 using std::unordered_set;
 
-enum class Type { INT32, INT64, FLOAT32, FLOAT64, BOOL, CHAR, STR, VOID, ARRAY, UNKNOWN };
-
 class Compiler {
 private:
+    unordered_map<string, StructDecl*> structs;
     unordered_map<string, FuncDecl*> functions;
+
     unordered_map<string, Type> function_return_types;
 
     vector<unordered_map<string, Type>> variable_scopes;
@@ -138,6 +138,9 @@ private:
                 }
                 functions[func->name] = func;
                 function_return_types[func->name] = token_to_type(func->return_type);
+            }
+            if (auto* strct = dynamic_cast<StructDecl*>(s.get())) {
+                structs[strct->name] = strct;
             }
         }
 
@@ -340,11 +343,19 @@ private:
             compile_expr(assign_stmt->value.get(), bytecode, target_type);
             int name_index = bytecode.add_const(var->name);
             bytecode.emit(OpCode::OP_SAVE, name_index);
+
         } else if (auto* arr_access = dynamic_cast<ArrayAccessExpr*>(assign_stmt->target.get())) {
             compile_expr(arr_access->array.get(), bytecode);
             compile_expr(arr_access->index.get(), bytecode);
             compile_expr(assign_stmt->value.get(), bytecode);
             bytecode.emit(OpCode::OP_SET_INDEX);
+
+        } else if (auto* field = dynamic_cast<FieldAccessExpr*>(assign_stmt->target.get())) {
+            compile_expr(field->object.get(), bytecode, Type::UNKNOWN);
+            int field_idx = bytecode.add_const(field->field);
+            compile_expr(assign_stmt->value.get(), bytecode, Type::UNKNOWN);
+            bytecode.emit(OpCode::OP_SET_MEMBER, field_idx);
+            
         } else {
             throw runtime_error("Invalid assignment target");
         }
@@ -378,6 +389,9 @@ private:
             return;
         }
 
+        if (auto* struct_decl = dynamic_cast<StructDecl*>(stmt)) {
+            return; 
+        }
         if (auto* load_stmt = dynamic_cast<LoadStmt*>(stmt)) { emit_module_globals(load_stmt, bytecode); return; }
         if (auto* if_stmt = dynamic_cast<IfStmt*>(stmt)) { compile_if(if_stmt, bytecode); return; }
         if (auto* while_stmt = dynamic_cast<WhileStmt*>(stmt)) { compile_while(while_stmt, bytecode); return; }
@@ -446,6 +460,26 @@ private:
             return get_var_type(var->name);
         }
 
+        if (auto* field = dynamic_cast<FieldAccessExpr*>(expr)) {
+            compile_expr(field->object.get(), bytecode, Type::UNKNOWN);
+            int field_idx = bytecode.add_const(field->field);
+            bytecode.emit(OpCode::OP_GET_MEMBER, field_idx);
+            return Type::UNKNOWN;
+        }
+        if (auto* lit = dynamic_cast<StructLiteral*>(expr)) {
+            int name_idx = bytecode.add_const(lit->struct_name);
+            uint8_t field_count = static_cast<uint8_t>(lit->initializers.size());
+
+            for (const auto& [field_name, field_expr] : lit->initializers) {
+                int field_idx = bytecode.add_const(field_name);
+                bytecode.emit(OpCode::OP_CONSTANT, field_idx);
+                compile_expr(field_expr.get(), bytecode, Type::UNKNOWN);
+            }
+
+            bytecode.emit(OpCode::OP_NEW_STRUCT, name_idx, field_count);
+            return Type::UNKNOWN;
+        }
+
         if (auto* assign_expr = dynamic_cast<AssignExpr*>(expr)) {
             if (is_constant(assign_expr->name)) {
                 throw runtime_error("Cannot reassign constant variable '" + assign_expr->name + "'");
@@ -494,19 +528,40 @@ private:
         }
 
         if (auto* call = dynamic_cast<CallExpr*>(expr)) {
-            FuncDecl* fn = nullptr;
-            if (functions.count(call->name)) fn = functions[call->name];
+             auto nit = bytecode.native_index.find(call->name);
+            if (nit != bytecode.native_index.end()) {
+                const NativeSymbol& sym = bytecode.natives[nit->second];
+                int argc = static_cast<int>(call->arguments.size());
 
-            if (fn && fn->params.size() != call->arguments.size()) {
+                if (argc < sym.min_arity || argc > sym.max_arity)
+                    throw runtime_error(sym.name + ": expected " +
+                        (sym.min_arity == sym.max_arity
+                            ? std::to_string(sym.min_arity)
+                            : std::to_string(sym.min_arity) + ".." + std::to_string(sym.max_arity)) +
+                        " args, got " + std::to_string(argc));
+
+                for (int i = argc - 1; i >= 0; --i)
+                    compile_expr(call->arguments[i].get(), bytecode, Type::UNKNOWN);
+
+                uint16_t id = nit->second;
+                bytecode.emit(OpCode::OP_NATIVE_CALL,
+                            (id >> 8) & 0xFF, id & 0xFF, static_cast<uint8_t>(argc));
+                return sym.ret_type;
+            }
+
+            FuncDecl* func = nullptr;
+            if (functions.count(call->name)) func = functions[call->name];
+
+            if (func && func->params.size() != call->arguments.size()) {
                 throw runtime_error("Function '" + call->name + "' expects " +
-                    std::to_string(fn->params.size()) + " args, got " +
+                    std::to_string(func->params.size()) + " args, got " +
                     std::to_string(call->arguments.size()));
             }
 
             for (size_t i = 0; i < call->arguments.size(); i++) {
                 size_t idx = call->arguments.size() - 1 - i;   // reverse iteration
                 auto& arg = call->arguments[idx];
-                bool is_ref = fn && fn->params[idx].is_ref;
+                bool is_ref = func && func->params[idx].is_ref;
 
                 if (is_ref) {
                     auto* v = dynamic_cast<VariableExpr*>(arg.get());
@@ -648,8 +703,7 @@ private:
     }
 
 public:
-    Bytecode compile(const vector<unique_ptr<Stmt>>& program) {
-        Bytecode bytecode;
+    void compile(const vector<unique_ptr<Stmt>>& program, Bytecode& bytecode) {
         push_scope();
 
         // Register functions
@@ -657,9 +711,10 @@ public:
             if (auto* func = dynamic_cast<FuncDecl*>(stmt.get())) {
                 functions[func->name] = func;
                 function_return_types[func->name] = token_to_type(func->return_type);
-            }
-            if (auto* load = dynamic_cast<LoadStmt*>(stmt.get())) {
+            } else if (auto* load = dynamic_cast<LoadStmt*>(stmt.get())) {
                 parse_and_register_module(load);
+            } else if (auto* strct = dynamic_cast<StructDecl*>(stmt.get())) {
+                structs[strct->name] = strct;
             }
         }
 
@@ -708,6 +763,6 @@ public:
         }
 
         bytecode.emit(OpCode::OP_HALT);
-        return bytecode;
+        return;
     }
 };

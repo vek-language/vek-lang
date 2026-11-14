@@ -14,6 +14,9 @@
 #include "./headers/vm.hpp"
 #include "./headers/serializer.hpp"
 
+// Native functions
+//#include "./natives/natives_name.hpp"
+
 namespace fs = std::filesystem;
 using std::runtime_error;
 
@@ -86,7 +89,10 @@ int main(int argc, char* argv[]) {
         auto ast = parser.parse_program();
 
         Compiler compiler;
-        Bytecode bytecode = compiler.compile(ast);
+        Bytecode bytecode;
+
+        // register_name_natives(bytecode);
+        compiler.compile(ast, bytecode);
 
         if (command == "build") {
             fs::path out = fs::path(path).replace_extension(".vkc");
