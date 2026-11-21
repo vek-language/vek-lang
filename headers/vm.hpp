@@ -44,12 +44,12 @@ private:
 
     // Helpers
     string value_to_string(const Value& v) {
-        if (holds_alternative<string>(v)) return get<string>(v);
-        if (holds_alternative<char>(v)) return string(1, get<char>(v));
-        if (holds_alternative<bool>(v)) return get<bool>(v) ? "true" : "false";
-        if (holds_alternative<int32_t>(v)) return std::to_string(get<int32_t>(v));
-        if (holds_alternative<int64_t>(v)) return std::to_string(get<int64_t>(v));
-        if (holds_alternative<float>(v)) return std::to_string(get<float>(v));
+        if (holds_alternative<string>(v))   return get<string>(v);
+        if (holds_alternative<char>(v))     return string(1, get<char>(v));
+        if (holds_alternative<bool>(v))     return get<bool>(v) ? "true" : "false";
+        if (holds_alternative<int32_t>(v))  return std::to_string(get<int32_t>(v));
+        if (holds_alternative<int64_t>(v))  return std::to_string(get<int64_t>(v));
+        if (holds_alternative<float>(v))    return std::to_string(get<float>(v));
         if (holds_alternative<double>(v)) {
             double d = get<double>(v);
             if (std::isinf(d)) return d > 0 ? "inf" : "-inf";
@@ -70,13 +70,13 @@ private:
     }
 
      bool is_truthy(const Value& v) {
-        if (holds_alternative<bool>(v)) return get<bool>(v);
-        if (holds_alternative<int32_t>(v)) return get<int32_t>(v) != 0;
-        if (holds_alternative<int64_t>(v)) return get<int64_t>(v) != 0;
-        if (holds_alternative<float>(v)) return get<float>(v) != 0.0f;
-        if (holds_alternative<double>(v)) return get<double>(v) != 0.0;
-        if (holds_alternative<char>(v)) return get<char>(v) != '\0';
-        if (holds_alternative<string>(v)) return !get<string>(v).empty();
+        if (holds_alternative<bool>(v))     return get<bool>(v);
+        if (holds_alternative<int32_t>(v))  return get<int32_t>(v) != 0;
+        if (holds_alternative<int64_t>(v))  return get<int64_t>(v) != 0;
+        if (holds_alternative<float>(v))    return get<float>(v) != 0.0f;
+        if (holds_alternative<double>(v))   return get<double>(v) != 0.0;
+        if (holds_alternative<char>(v))     return get<char>(v) != '\0';
+        if (holds_alternative<string>(v))   return !get<string>(v).empty();
         if (holds_alternative<shared_ptr<ArrayObject>>(v)) {
             const auto& arr = get<shared_ptr<ArrayObject>>(v);
             return arr && !arr->elements.empty();
@@ -104,9 +104,9 @@ private:
             holds_alternative<float>(b) || holds_alternative<double>(b)) {
             mv.is_float = true;
             auto to_double = [](const Value& v) {
-                if (holds_alternative<int32_t>(v)) return static_cast<double>(get<int32_t>(v));
-                if (holds_alternative<int64_t>(v)) return static_cast<double>(get<int64_t>(v));
-                if (holds_alternative<float>(v)) return static_cast<double>(get<float>(v));
+                if (holds_alternative<int32_t>(v))  return static_cast<double>(get<int32_t>(v));
+                if (holds_alternative<int64_t>(v))  return static_cast<double>(get<int64_t>(v));
+                if (holds_alternative<float>(v))    return static_cast<double>(get<float>(v));
                 return get<double>(v);
             };
             mv.f_left = to_double(a);
@@ -266,9 +266,7 @@ public:
                         }
                     }
                     if (!found) {
-                        auto cell = make_shared<Cell>();
-                        cell->value = val;
-                        scopes.back()[var_name] = cell;
+                        throw runtime_error("Undefined variable '" + var_name + "'");
                     }
                     break;
                 }
@@ -328,24 +326,24 @@ public:
                     // To int
                     if (target_type == TokenType::INT32 || target_type == TokenType::INT64) {
                         long long result = 0;
-                        if (holds_alternative<int32_t>(val)) result = get<int32_t>(val);
-                        else if (holds_alternative<int64_t>(val)) result = get<int64_t>(val);
-                        else if (holds_alternative<float>(val)) result = static_cast<long long>(get<float>(val));
-                        else if (holds_alternative<double>(val)) result = static_cast<long long>(get<double>(val));
-                        else if (holds_alternative<bool>(val)) result = get<bool>(val) ? 1 : 0;
-                        else if (holds_alternative<char>(val)) result = static_cast<long long>(get<char>(val));
+                        if (holds_alternative<int32_t>(val))        result = get<int32_t>(val);
+                        else if (holds_alternative<int64_t>(val))   result = get<int64_t>(val);
+                        else if (holds_alternative<float>(val))     result = static_cast<long long>(get<float>(val));
+                        else if (holds_alternative<double>(val))    result = static_cast<long long>(get<double>(val));
+                        else if (holds_alternative<bool>(val))      result = get<bool>(val) ? 1 : 0;
+                        else if (holds_alternative<char>(val))      result = static_cast<long long>(get<char>(val));
                         
                         push(result);
                     }
                     // To float
                     else if (target_type == TokenType::FLOAT32 || target_type == TokenType::FLOAT64) {
                         double result = 0.0;
-                        if (holds_alternative<int32_t>(val)) result = static_cast<double>(get<int32_t>(val));
-                        else if (holds_alternative<int64_t>(val)) result = static_cast<double>(get<int64_t>(val));
-                        else if (holds_alternative<float>(val)) result = static_cast<double>(get<float>(val));
-                        else if (holds_alternative<double>(val)) result = get<double>(val);
-                        else if (holds_alternative<bool>(val)) result = get<bool>(val) ? 1.0 : 0.0;
-                        else if (holds_alternative<char>(val)) result = static_cast<double>(get<char>(val));
+                        if (holds_alternative<int32_t>(val))        result = static_cast<double>(get<int32_t>(val));
+                        else if (holds_alternative<int64_t>(val))   result = static_cast<double>(get<int64_t>(val));
+                        else if (holds_alternative<float>(val))     result = static_cast<double>(get<float>(val));
+                        else if (holds_alternative<double>(val))    result = get<double>(val);
+                        else if (holds_alternative<bool>(val))      result = get<bool>(val) ? 1.0 : 0.0;
+                        else if (holds_alternative<char>(val))      result = static_cast<double>(get<char>(val));
                         
                         push(result);
                     }
@@ -535,8 +533,34 @@ public:
                 // System functions
                 case OpCode::OP_PRINT: {
                     Value val = pop();
-                    std::cout << value_to_string(val) << "\n";
+                    std::cout << value_to_string(val);
                     break;
+                }
+
+                case OpCode::OP_INPUT: {
+                    Type target_type = static_cast<Type>(bytecode.code[ip++]);
+                    string line;
+                    if (!std::getline(std::cin, line)) {
+                        line = "";
+                    }
+
+                    try {
+                        switch (target_type) {
+                            case Type::INT32:   push(static_cast<int32_t>(std::stoi(line))); break;
+                            case Type::INT64:   push(static_cast<int64_t>(std::stoll(line))); break;
+                            case Type::FLOAT32: push(std::stof(line)); break;
+                            case Type::FLOAT64: push(std::stod(line)); break;
+                            case Type::BOOL:    push(line == "true" || line == "1"); break;
+                            case Type::CHAR:    push(line.empty() ? '\0' : line[0]); break;
+                            case Type::STR:
+                            default:            push(line); break;
+                        }
+                        break;
+                    } catch (const std::invalid_argument&) {
+                        throw runtime_error("Wrong type: expected " + type_to_string(target_type));
+                    } catch (const std::out_of_range&) {
+                        throw runtime_error("Number out of range for " + type_to_string(target_type));
+                    }
                 }
 
                 case OpCode::OP_NATIVE_CALL: {

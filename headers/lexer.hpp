@@ -37,7 +37,11 @@ inline const unordered_map<std::string, TokenType> keywords = {
     {"while", TokenType::WHILE},
     {"for", TokenType::FOR},
 
+    {"break", TokenType::BREAK},
+    {"continue", TokenType::CONTINUE},
+
     {"print", TokenType::PRINT},
+    {"input", TokenType::INPUT},
 
     {"int32", TokenType::INT32},
     {"int64", TokenType::INT64},

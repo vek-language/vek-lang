@@ -110,7 +110,9 @@ enum class OpCode {
 
     // System Functions
     OP_PRINT = 0x90,
-    OP_NATIVE_CALL = 0x91,
+    OP_INPUT = 0x91,
+    
+    OP_NATIVE_CALL = 0x92,
 
     // End of code
     OP_HALT = 0xFF,

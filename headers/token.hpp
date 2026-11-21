@@ -17,7 +17,9 @@ enum class TokenType {
     
     LET, REF, CONST, FUNC, 
     IF, ELSE, WHILE, FOR,    
-    PRINT, RET,
+    PRINT, INPUT, RET,
+    
+    BREAK, CONTINUE,
     
     // Declaration types
     INT32, INT64, FLOAT32, FLOAT64, 
@@ -49,3 +51,18 @@ struct Token {
     string text;
     SourceLocation location;
 };
+
+string type_to_string(Type t) { 
+    switch(t) {
+        case Type::INT32:   return "int32"; 
+        case Type::INT64:   return "int64";
+        case Type::FLOAT32: return "float32"; 
+        case Type::FLOAT64: return "float64";
+        case Type::BOOL:    return "bool"; 
+        case Type::CHAR:    return "char";
+        case Type::STR:     return "str"; 
+        case Type::VOID:    return "void";
+        case Type::ARRAY:   return "array";
+        default:            return "unknown";
+    }
+}

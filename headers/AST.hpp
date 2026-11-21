@@ -44,12 +44,12 @@ struct FieldAccessExpr : Expr {
 };
 
 struct AssignExpr : Expr {
-    string name;
+    unique_ptr<Expr> target;
     TokenType op;
     unique_ptr<Expr> value;
 
-    AssignExpr(string n, TokenType operation, unique_ptr<Expr> value)
-        : name(move(n)), op(operation), value(move(value)) {}
+    AssignExpr(unique_ptr<Expr> t, TokenType operation, unique_ptr<Expr> value)
+        : target(move(t)), op(operation), value(move(value)) {}
 };
 
 struct CastExpr : Expr {
@@ -105,6 +105,9 @@ struct BinaryExpr : Expr {
 
 struct Stmt { virtual ~Stmt() = default; };
 
+struct BreakStmt : Stmt {};
+struct ContinueStmt : Stmt {};
+
 struct LoadStmt : Stmt {
     string filepath;
     bool is_stdlib;
@@ -132,16 +135,15 @@ struct VarDecl : Stmt {
           array_size(move(size)), initializer(move(init)), class_name(move(cls)) {}
 };
 
-struct AssignStmt : Stmt {
-    unique_ptr<Expr> target;
-    unique_ptr<Expr> value;
-    AssignStmt(unique_ptr<Expr> token_type, unique_ptr<Expr> value) 
-        : target(move(token_type)), value(move(value)) {}
-};
-
 struct PrintStmt : Stmt {
     unique_ptr<Expr> expression;
     PrintStmt(unique_ptr<Expr> expr) 
+        : expression(move(expr)) {}
+};
+
+struct InputStmt : Stmt {
+    unique_ptr<Expr> expression;
+    InputStmt(unique_ptr<Expr> expr) 
         : expression(move(expr)) {}
 };
 

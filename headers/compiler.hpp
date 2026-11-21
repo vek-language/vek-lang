@@ -22,6 +22,13 @@ using std::unordered_set;
 
 class Compiler {
 private:
+    struct LoopContext {
+        vector<size_t> break_patches;
+        vector<size_t> continue_patches;
+        int scope_depth;
+    };
+    vector<LoopContext> loop_stack;
+
     unordered_map<string, StructDecl*> structs;
     unordered_map<string, FuncDecl*> functions;
 
@@ -67,34 +74,38 @@ private:
     // Type helpers
     Type token_to_type(TokenType t) {
         switch(t) {
-            case TokenType::INT32: return Type::INT32;
-            case TokenType::INT64: return Type::INT64;
-            case TokenType::FLOAT32: return Type::FLOAT32;
-            case TokenType::FLOAT64: return Type::FLOAT64;
-            case TokenType::BOOL: return Type::BOOL;
-            case TokenType::CHAR: return Type::CHAR;
-            case TokenType::STR: return Type::STR;
-            case TokenType::VOID: return Type::VOID;
-            default: return Type::UNKNOWN;
+            case TokenType::INT32:      return Type::INT32;
+            case TokenType::INT64:      return Type::INT64;
+            case TokenType::FLOAT32:    return Type::FLOAT32;
+            case TokenType::FLOAT64:    return Type::FLOAT64;
+            case TokenType::BOOL:       return Type::BOOL;
+            case TokenType::CHAR:       return Type::CHAR;
+            case TokenType::STR:        return Type::STR;
+            case TokenType::VOID:       return Type::VOID;
+            default:                    return Type::UNKNOWN;
         }
     }
     
-    string type_to_string(Type t) { 
-        switch(t) {
-            case Type::INT32: return "int32"; 
-            case Type::INT64: return "int64";
-            case Type::FLOAT32: return "float32"; 
-            case Type::FLOAT64: return "float64";
-            case Type::BOOL: return "bool"; 
-            case Type::CHAR: return "char";
-            case Type::STR: return "str"; 
-            case Type::VOID: return "void";
-            case Type::ARRAY: return "array";
-            default: return "unknown";
+    Type promote_numeric(Type a, Type b) {
+        if (a == Type::FLOAT64 || b == Type::FLOAT64) return Type::FLOAT64;
+        if (a == Type::FLOAT32 || b == Type::FLOAT32) return Type::FLOAT32;
+        if (a == Type::INT64   || b == Type::INT64)   return Type::INT64;
+        return Type::INT32;
+    }
+
+    void emit_compound_math(TokenType op, Bytecode& bytecode) {
+        switch (op) {
+            case TokenType::PLUS:  bytecode.emit(OpCode::OP_ADD); break;
+            case TokenType::MINUS: bytecode.emit(OpCode::OP_SUBTRACT); break;
+            case TokenType::STAR:  bytecode.emit(OpCode::OP_MULTIPLY); break;
+            case TokenType::SLASH: bytecode.emit(OpCode::OP_DIVIDE); break;
+            default: throw runtime_error("Unknown compound assignment operator");
         }
     }
 
+
     bool is_numeric(Type t) { return t == Type::INT32 || t == Type::INT64 || t == Type::FLOAT32 || t == Type::FLOAT64; }
+    bool is_string_or_char(Type t) { return t == Type::STR || t == Type::CHAR; }
     bool is_assignable(Type target, Type source) { return target == source || (is_numeric(target) && is_numeric(source)); }
 
     void patch_jump(Bytecode& bytecode, size_t jump_index, size_t target) {
@@ -232,15 +243,29 @@ private:
 
     void compile_while(WhileStmt* stmt, Bytecode& bytecode) {
         size_t loop_start = bytecode.code.size();
-        compile_expr(stmt->condition.get(), bytecode, Type::BOOL);
+        loop_stack.push_back({ {}, {}, (int)variable_scopes.size() });
 
+        compile_expr(stmt->condition.get(), bytecode, Type::BOOL);
         bytecode.emit(OpCode::OP_JUMP_IF_FALSE, 0, 0);
         size_t exit_jump = bytecode.code.size() - 2;
 
         compile_stmt(stmt->body.get(), bytecode);
 
+        // "continue"
+        for (size_t cont_jump : loop_stack.back().continue_patches) {
+            patch_jump(bytecode, cont_jump, loop_start);
+        }
+
         bytecode.emit(OpCode::OP_JUMP, (loop_start >> 8) & 0xFF, loop_start & 0xFF);
-        patch_jump(bytecode, exit_jump, bytecode.code.size());
+
+        // "break"
+        size_t loop_end = bytecode.code.size();
+        patch_jump(bytecode, exit_jump, loop_end);
+        for (size_t break_jump : loop_stack.back().break_patches) {
+            patch_jump(bytecode, break_jump, loop_end);
+        }
+
+        loop_stack.pop_back();
     }
 
     void compile_for(ForStmt* stmt, Bytecode& bytecode) {
@@ -253,6 +278,10 @@ private:
 
         size_t loop_start = bytecode.code.size();
 
+        // Push loop context after scope created
+        // "break" jumps to OP_EXIT_SCOPE
+        loop_stack.push_back({ {}, {}, (int)variable_scopes.size() });
+
         size_t exit_jump = 0;
         if (stmt->condition) {
             compile_expr(stmt->condition.get(), bytecode, Type::BOOL);
@@ -261,6 +290,12 @@ private:
         }
 
         compile_stmt(stmt->body.get(), bytecode);
+
+        // "continue" there, so stmt->increment runs
+        size_t increment_start = bytecode.code.size();
+        for (size_t cont_jump : loop_stack.back().continue_patches) {
+            patch_jump(bytecode, cont_jump, increment_start);
+        }
 
         if (stmt->increment) {
             compile_expr(stmt->increment.get(), bytecode, Type::UNKNOWN);
@@ -271,12 +306,43 @@ private:
 
         bytecode.emit(OpCode::OP_JUMP, (loop_start >> 8) & 0xFF, loop_start & 0xFF);
 
+        // "break"
+        size_t loop_end = bytecode.code.size();
         if (stmt->condition) {
-            patch_jump(bytecode, exit_jump, bytecode.code.size());
+            patch_jump(bytecode, exit_jump, loop_end);
         }
+        for (size_t break_jump : loop_stack.back().break_patches) {
+            patch_jump(bytecode, break_jump, loop_end);
+        }
+
+        loop_stack.pop_back();
 
         bytecode.emit(OpCode::OP_EXIT_SCOPE);
         pop_scope();
+    }
+
+    void compile_break(BreakStmt* stmt, Bytecode& bytecode) {
+        if (loop_stack.empty()) {
+            throw runtime_error("'break' used outside of a loop.");
+        }
+        int scopes_to_exit = (int)variable_scopes.size() - loop_stack.back().scope_depth;
+        for (int i = 0; i < scopes_to_exit; i++) {
+            bytecode.emit(OpCode::OP_EXIT_SCOPE);
+        }
+        bytecode.emit(OpCode::OP_JUMP, 0, 0);
+        loop_stack.back().break_patches.push_back(bytecode.code.size() - 2);
+    }
+
+    void compile_continue(ContinueStmt* stmt, Bytecode& bytecode) {
+        if (loop_stack.empty()) {
+            throw runtime_error("'continue' used outside of a loop.");
+        }
+        int scopes_to_exit = (int)variable_scopes.size() - loop_stack.back().scope_depth;
+        for (int i = 0; i < scopes_to_exit; i++) {
+            bytecode.emit(OpCode::OP_EXIT_SCOPE);
+        }
+        bytecode.emit(OpCode::OP_JUMP, 0, 0);
+        loop_stack.back().continue_patches.push_back(bytecode.code.size() - 2);
     }
 
     // Statements
@@ -333,37 +399,25 @@ private:
         }
     }
 
-    void compile_assign(AssignStmt* assign_stmt, Bytecode& bytecode) {
-        if (auto* var = dynamic_cast<VariableExpr*>(assign_stmt->target.get())) {
-            if (is_constant(var->name)) {
-                throw runtime_error("Cannot reassign constant variable '" + var->name + "'");
-            }
-
-            Type target_type = get_var_type(var->name);
-            compile_expr(assign_stmt->value.get(), bytecode, target_type);
-            int name_index = bytecode.add_const(var->name);
-            bytecode.emit(OpCode::OP_SAVE, name_index);
-
-        } else if (auto* arr_access = dynamic_cast<ArrayAccessExpr*>(assign_stmt->target.get())) {
-            compile_expr(arr_access->array.get(), bytecode);
-            compile_expr(arr_access->index.get(), bytecode);
-            compile_expr(assign_stmt->value.get(), bytecode);
-            bytecode.emit(OpCode::OP_SET_INDEX);
-
-        } else if (auto* field = dynamic_cast<FieldAccessExpr*>(assign_stmt->target.get())) {
-            compile_expr(field->object.get(), bytecode, Type::UNKNOWN);
-            int field_idx = bytecode.add_const(field->field);
-            compile_expr(assign_stmt->value.get(), bytecode, Type::UNKNOWN);
-            bytecode.emit(OpCode::OP_SET_MEMBER, field_idx);
-            
-        } else {
-            throw runtime_error("Invalid assignment target");
-        }
-    }
-
     void compile_print(PrintStmt* print_stmt, Bytecode& bytecode) {
         compile_expr(print_stmt->expression.get(), bytecode, Type::UNKNOWN);
         bytecode.emit(OpCode::OP_PRINT);
+    }
+
+    void compile_input(InputStmt* stmt, Bytecode& bytecode) {
+        if (auto* var = dynamic_cast<VariableExpr*>(stmt->expression.get())) {
+            Type var_type = get_var_type(var->name);
+            if (var_type == Type::UNKNOWN) {
+                throw runtime_error("Undefined variable in input(): " + var->name);
+            }
+            if (is_constant(var->name)) {
+                throw runtime_error("Cannot read input into constant variable: " + var->name);
+            }
+
+            bytecode.emit(OpCode::OP_INPUT, static_cast<uint8_t>(var_type));
+            int name_idx = bytecode.add_const(var->name);
+            bytecode.emit(OpCode::OP_SAVE, name_idx);
+        }
     }
 
     void compile_return(ReturnStmt* ret_stmt, Bytecode& bytecode) {
@@ -396,10 +450,12 @@ private:
         if (auto* if_stmt = dynamic_cast<IfStmt*>(stmt)) { compile_if(if_stmt, bytecode); return; }
         if (auto* while_stmt = dynamic_cast<WhileStmt*>(stmt)) { compile_while(while_stmt, bytecode); return; }
         if (auto* for_stmt = dynamic_cast<ForStmt*>(stmt)) { compile_for(for_stmt, bytecode); return; }
+        if (auto* break_stmt = dynamic_cast<BreakStmt*>(stmt)) { compile_break(break_stmt, bytecode); return; }
+        if (auto* continue_stmt = dynamic_cast<ContinueStmt*>(stmt)) { compile_continue(continue_stmt, bytecode); return; }
 
         if (auto* var_decl = dynamic_cast<VarDecl*>(stmt)) { compile_var_decl(var_decl, bytecode); return; }
-        if (auto* assign_stmt = dynamic_cast<AssignStmt*>(stmt)) { compile_assign(assign_stmt, bytecode); return; }
         if (auto* print_stmt = dynamic_cast<PrintStmt*>(stmt)) { compile_print(print_stmt, bytecode); return; }
+        if (auto* input_stmt = dynamic_cast<InputStmt*>(stmt)) { compile_input(input_stmt, bytecode); return; }
         if (auto* ret_stmt = dynamic_cast<ReturnStmt*>(stmt)) { compile_return(ret_stmt, bytecode); return; }
 
         if (auto* func = dynamic_cast<FuncDecl*>(stmt)) { emit_function_body(func, bytecode); return; }
@@ -481,24 +537,64 @@ private:
         }
 
         if (auto* assign_expr = dynamic_cast<AssignExpr*>(expr)) {
-            if (is_constant(assign_expr->name)) {
-                throw runtime_error("Cannot reassign constant variable '" + assign_expr->name + "'");
-            }
-            
-            int load_idx = bytecode.add_const(assign_expr->name);
-            bytecode.emit(OpCode::OP_LOAD, load_idx);
-            compile_expr(assign_expr->value.get(), bytecode, Type::UNKNOWN);
+            // Variable
+            if (auto* var = dynamic_cast<VariableExpr*>(assign_expr->target.get())) {
+                Type var_type = get_var_type(var->name);
+                if (var_type == Type::UNKNOWN) {
+                    throw runtime_error("Undefined variable '" + var->name + "'");
+                }
+                if (is_constant(var->name)) {
+                    throw runtime_error("Cannot reassign constant variable '" + var->name + "'");
+                }
 
-            switch (assign_expr->op) {
-                case TokenType::PLUS:  bytecode.emit(OpCode::OP_ADD); break;
-                case TokenType::MINUS: bytecode.emit(OpCode::OP_SUBTRACT); break;
-                case TokenType::STAR:  bytecode.emit(OpCode::OP_MULTIPLY); break;
-                case TokenType::SLASH: bytecode.emit(OpCode::OP_DIVIDE); break;
-                default: throw runtime_error("Invalid assignment operator");
+                int var_idx = bytecode.add_const(var->name);
+
+                if (assign_expr->op == TokenType::EQUALS) {
+                    Type val_type = compile_expr(assign_expr->value.get(), bytecode, var_type);
+                    if (!is_assignable(var_type, val_type)) {
+                        throw runtime_error("Cannot assign " + type_to_string(val_type) + " to " + type_to_string(var_type));
+                    }
+                    bytecode.emit(OpCode::OP_SAVE, var_idx);
+                } else {
+                    bytecode.emit(OpCode::OP_LOAD, var_idx);
+                    compile_expr(assign_expr->value.get(), bytecode, var_type);
+                    switch (assign_expr->op) {
+                        case TokenType::PLUS:  bytecode.emit(OpCode::OP_ADD);       break;
+                        case TokenType::MINUS: bytecode.emit(OpCode::OP_SUBTRACT);  break;
+                        case TokenType::STAR:  bytecode.emit(OpCode::OP_MULTIPLY);  break;
+                        case TokenType::SLASH: bytecode.emit(OpCode::OP_DIVIDE);    break;
+                        default: throw runtime_error("Invalid assignment operator");
+                    }
+                    bytecode.emit(OpCode::OP_SAVE, var_idx);
+                }
+                return Type::UNKNOWN;
             }
 
-            bytecode.emit(OpCode::OP_SAVE, load_idx);
-            return Type::UNKNOWN;
+            // Array element
+            if (auto* arr = dynamic_cast<ArrayAccessExpr*>(assign_expr->target.get())) {
+                if (assign_expr->op != TokenType::EQUALS) {
+                    throw runtime_error("Compound assignment on array elements is not supported");
+                }
+                compile_expr(arr->array.get(), bytecode, Type::UNKNOWN);
+                compile_expr(arr->index.get(), bytecode, Type::INT64);
+                compile_expr(assign_expr->value.get(), bytecode, Type::UNKNOWN);
+                bytecode.emit(OpCode::OP_SET_INDEX);
+                return Type::UNKNOWN;
+            }
+
+            // Struct/Class member
+            if (auto* field = dynamic_cast<FieldAccessExpr*>(assign_expr->target.get())) {
+                if (assign_expr->op != TokenType::EQUALS) {
+                    throw runtime_error("Compound assignment on struct fields is not supported");
+                }
+                compile_expr(field->object.get(), bytecode, Type::UNKNOWN);
+                compile_expr(assign_expr->value.get(), bytecode, Type::UNKNOWN);
+                int field_idx = bytecode.add_const(field->field);
+                bytecode.emit(OpCode::OP_SET_MEMBER, field_idx);
+                return Type::UNKNOWN;
+            }
+
+            throw runtime_error("Invalid assignment target");
         }
 
         if (auto* arr_access = dynamic_cast<ArrayAccessExpr*>(expr)) {
@@ -595,17 +691,16 @@ private:
         }
 
         if (auto* bin = dynamic_cast<BinaryExpr*>(expr)) {
-            
-            // Short circuit
+            // Short-circuit logical operators
             if (bin->op == TokenType::AND) {
                 compile_expr(bin->left.get(), bytecode, Type::UNKNOWN);
                 bytecode.emit(OpCode::OP_DUPLICATE);
                 bytecode.emit(OpCode::OP_JUMP_IF_FALSE, 0, 0);
                 size_t jump_if_false = bytecode.code.size() - 2;
-                
+
                 bytecode.emit(OpCode::OP_POP);
                 compile_expr(bin->right.get(), bytecode, Type::UNKNOWN);
-                
+
                 patch_jump(bytecode, jump_if_false, bytecode.code.size());
                 return Type::BOOL;
             }
@@ -614,82 +709,63 @@ private:
                 bytecode.emit(OpCode::OP_DUPLICATE);
                 bytecode.emit(OpCode::OP_JUMP_IF_TRUE, 0, 0);
                 size_t jump_if_true = bytecode.code.size() - 2;
-                
+
                 bytecode.emit(OpCode::OP_POP);
                 compile_expr(bin->right.get(), bytecode, Type::UNKNOWN);
-                
+
                 patch_jump(bytecode, jump_if_true, bytecode.code.size());
                 return Type::BOOL;
             }
             
-            Type left_type = compile_expr(bin->left.get(), bytecode, expected_type);
-            Type right_type = compile_expr(bin->right.get(), bytecode, expected_type);
-            
+            Type left_type = compile_expr(bin->left.get(), bytecode, Type::UNKNOWN);
+            Type right_type = compile_expr(bin->right.get(), bytecode, Type::UNKNOWN);
+
             Type result_type = Type::UNKNOWN;
-            if (is_numeric(left_type) && is_numeric(right_type)) {
-                if (left_type == Type::FLOAT64 || right_type == Type::FLOAT64) {
-                    result_type = Type::FLOAT64;
-                } 
-                else if (left_type == Type::FLOAT32 || right_type == Type::FLOAT32) {
-                    result_type = Type::FLOAT32;
-                } 
-                else if (left_type == Type::INT64 || right_type == Type::INT64) {
-                    result_type = Type::INT64;
-                } 
-                else {
-                    result_type = Type::INT32; 
-                }
-            } 
-            else if (left_type == Type::STR && right_type == Type::STR && bin->op == TokenType::PLUS) {
-                result_type = Type::STR;
-            }
 
             if (bin->op == TokenType::PLUS) {
-                bool is_valid_string = (left_type == Type::STR && right_type == Type::STR);
-                bool is_valid_number = (is_numeric(left_type) && is_numeric(right_type));
-                
-                if (!is_valid_string && !is_valid_number) {
+                if (is_string_or_char(left_type) && is_string_or_char(right_type)) {
+                    result_type = Type::STR;
+                } else if (is_numeric(left_type) && is_numeric(right_type)) {
+                    result_type = promote_numeric(left_type, right_type);
+                } else {
                     throw runtime_error("Cannot add " + type_to_string(left_type) + " and " + type_to_string(right_type));
                 }
-            } 
+            }
             else if (bin->op == TokenType::EQUALS_EQUALS || bin->op == TokenType::NOT_EQUALS) {
-                bool is_valid_number = (is_numeric(left_type) && is_numeric(right_type));
-                bool is_valid_string = (left_type == Type::STR && right_type == Type::STR);
-                bool is_valid_char = (left_type == Type::CHAR && right_type == Type::CHAR);
-                bool is_valid_bool = (left_type == Type::BOOL && right_type == Type::BOOL);
+                bool is_valid_number = is_numeric(left_type) && is_numeric(right_type);
+                bool is_same_primitive = (left_type == right_type) &&
+                    (left_type == Type::STR || left_type == Type::CHAR || left_type == Type::BOOL);
 
-                if (!is_valid_number && !is_valid_string && !is_valid_char && !is_valid_bool) {
+                if (!is_valid_number && !is_same_primitive) {
                     throw runtime_error("Cannot compare " + type_to_string(left_type) + " and " + type_to_string(right_type));
                 }
-                
+                result_type = Type::BOOL;
+            }
+            else if (bin->op == TokenType::LESS_THAN || bin->op == TokenType::LESS_EQUAL ||
+                    bin->op == TokenType::GREATER_THAN || bin->op == TokenType::GREATER_EQUAL) {
+                if (!is_numeric(left_type) || !is_numeric(right_type)) {
+                    throw runtime_error("Relational comparisons require numbers, got " + type_to_string(left_type) + " and " + type_to_string(right_type));
+                }
                 result_type = Type::BOOL;
             }
             else {
+                // -, *, /
                 if (!is_numeric(left_type) || !is_numeric(right_type)) {
                     throw runtime_error("Math operations require numbers, got " + type_to_string(left_type) + " and " + type_to_string(right_type));
                 }
-                
-                if (left_type == Type::FLOAT64 || right_type == Type::FLOAT64) {
-                    result_type = Type::FLOAT64;
-                } else if (left_type == Type::FLOAT32 || right_type == Type::FLOAT32) {
-                    result_type = Type::FLOAT32;
-                } else if (left_type == Type::INT64 || right_type == Type::INT64) {
-                    result_type = Type::INT64;
-                } else {
-                    result_type = Type::INT32;
-                }
+                result_type = promote_numeric(left_type, right_type);
             }
 
             switch (bin->op) {
-                case TokenType::PLUS: bytecode.emit(OpCode::OP_ADD); break;
-                case TokenType::MINUS: bytecode.emit(OpCode::OP_SUBTRACT); break;
-                case TokenType::STAR: bytecode.emit(OpCode::OP_MULTIPLY); break;
-                case TokenType::SLASH: bytecode.emit(OpCode::OP_DIVIDE); break;
-                case TokenType::GREATER_THAN: bytecode.emit(OpCode::OP_GREATER_THAN); break;
-                case TokenType::LESS_THAN: bytecode.emit(OpCode::OP_LESS_THAN); break;
-                case TokenType::GREATER_EQUAL: bytecode.emit(OpCode::OP_GREATER_EQUAL); break;
-                case TokenType::LESS_EQUAL: bytecode.emit(OpCode::OP_LESS_EQUAL); break;
-                case TokenType::EQUALS_EQUALS: bytecode.emit(OpCode::OP_EQUAL); break;
+                case TokenType::PLUS:           bytecode.emit(OpCode::OP_ADD); break;
+                case TokenType::MINUS:          bytecode.emit(OpCode::OP_SUBTRACT); break;
+                case TokenType::STAR:           bytecode.emit(OpCode::OP_MULTIPLY); break;
+                case TokenType::SLASH:          bytecode.emit(OpCode::OP_DIVIDE); break;
+                case TokenType::GREATER_THAN:   bytecode.emit(OpCode::OP_GREATER_THAN); break;
+                case TokenType::LESS_THAN:      bytecode.emit(OpCode::OP_LESS_THAN); break;
+                case TokenType::GREATER_EQUAL:  bytecode.emit(OpCode::OP_GREATER_EQUAL); break;
+                case TokenType::LESS_EQUAL:     bytecode.emit(OpCode::OP_LESS_EQUAL); break;
+                case TokenType::EQUALS_EQUALS:  bytecode.emit(OpCode::OP_EQUAL); break;
                 case TokenType::NOT_EQUALS: 
                     bytecode.emit(OpCode::OP_EQUAL); 
                     bytecode.emit(OpCode::OP_NOT); 

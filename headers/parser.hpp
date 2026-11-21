@@ -55,28 +55,34 @@ private:
         return make_unique<ExprStmt>(parse_logic());
     }
     
-    // x += N: x = x + N (WITHOUT SEMICOLON)
-    unique_ptr<Expr> parse_quick_assignment(unique_ptr<Expr> expr) {
-        if (match(TokenType::PLUS_EQUALS) || match(TokenType::MINUS_EQUALS) || 
+    // Assignment (=, +=, -=, *=, /=) (no semicolon)
+    unique_ptr<Expr> parse_assignment() {
+        auto expr = parse_logic();
+
+        if (match(TokenType::EQUALS) ||
+            match(TokenType::PLUS_EQUALS) || match(TokenType::MINUS_EQUALS) ||
             match(TokenType::STAR_EQUALS) || match(TokenType::SLASH_EQUALS)) {
-            
+
             TokenType op = previous().type;
-            TokenType math_op;
+            TokenType inner_op = TokenType::EQUALS;
 
-            if (op == TokenType::PLUS_EQUALS) math_op = TokenType::PLUS;
-            else if (op == TokenType::MINUS_EQUALS) math_op = TokenType::MINUS;
-            else if (op == TokenType::STAR_EQUALS) math_op = TokenType::STAR;
-            else math_op = TokenType::SLASH;
+            if (op == TokenType::PLUS_EQUALS) inner_op = TokenType::PLUS;
+            else if (op == TokenType::MINUS_EQUALS) inner_op = TokenType::MINUS;
+            else if (op == TokenType::STAR_EQUALS) inner_op = TokenType::STAR;
+            else if (op == TokenType::SLASH_EQUALS) inner_op = TokenType::SLASH;
 
-            auto value = parse_logic();
+            // Right-associative (allows a = b = 5)
+            auto value = parse_assignment();
 
-            auto* var_target = dynamic_cast<VariableExpr*>(expr.get());
-            if (!var_target) {
-                throw runtime_error("Invalid target for compound assignment");
+            if (!dynamic_cast<VariableExpr*>(expr.get()) &&
+                !dynamic_cast<ArrayAccessExpr*>(expr.get()) &&
+                !dynamic_cast<FieldAccessExpr*>(expr.get())) {
+                throw runtime_error("Invalid assignment target.");
             }
 
-            return make_unique<AssignExpr>(var_target->name, math_op, move(value));
+            return make_unique<AssignExpr>(move(expr), inner_op, move(value));
         }
+
         return expr;
     }
 
@@ -123,12 +129,32 @@ private:
         if (check(TokenType::WHILE)) return parse_while();
         if (check(TokenType::FOR)) return parse_for();
 
+        if (match(TokenType::BREAK)) {
+            consume(TokenType::SEMICOLON, "Expected ';'");
+            return make_unique<BreakStmt>();
+        };
+        if (match(TokenType::CONTINUE)) {
+            consume(TokenType::SEMICOLON, "Expected ';'");
+            return make_unique<ContinueStmt>();
+        };
+
         if (match(TokenType::PRINT)) {
             consume(TokenType::LPAREN, "Expected '(' after 'print'");
             auto expr = parse_logic();
             consume(TokenType::RPAREN, "Expected ')' after print expression");
             consume(TokenType::SEMICOLON, "Expected ';'");
             return make_unique<PrintStmt>(move(expr));
+        }
+
+        if (match(TokenType::INPUT)) {
+            consume(TokenType::LPAREN, "Expected '(' after 'input'");
+            
+            auto expr = parse_logic();
+            auto* var_target = dynamic_cast<VariableExpr*>(expr.get());
+
+            consume(TokenType::RPAREN, "Expected ')' after input expression");
+            consume(TokenType::SEMICOLON, "Expected ';'");
+            return make_unique<InputStmt>(move(expr));
         }
 
         if (check(TokenType::RET)) {
@@ -141,23 +167,9 @@ private:
 
         if (check(TokenType::LBRACE)) return parse_block();
 
-        auto expr = parse_logic();
-        auto quick_assign = parse_quick_assignment(move(expr));
-
-        if (dynamic_cast<AssignExpr*>(quick_assign.get())) {
-            consume(TokenType::SEMICOLON, "Expected ';'");
-            return make_unique<ExprStmt>(move(quick_assign));
-        }
-        
-        if (match(TokenType::EQUALS)) {
-            auto value = parse_logic();
-            consume(TokenType::SEMICOLON, "Expected ';'");
-            return make_unique<AssignStmt>(move(quick_assign), move(value));
-        }
-        if (match(TokenType::SEMICOLON)) {
-            return make_unique<ExprStmt>(move(quick_assign));
-        }
-        throw runtime_error("Parsing failed on token: " + tokens[current].text + " (Previous: " + previous().text + ")");
+        auto expr = parse_assignment();
+        consume(TokenType::SEMICOLON, "Expected ';'");
+        return make_unique<ExprStmt>(move(expr));
     }
 
     unique_ptr<Stmt> parse_block() {
@@ -285,8 +297,7 @@ private:
         // Increment
         unique_ptr<Expr> increment = nullptr;
         if (!check(TokenType::RPAREN)) {
-            auto expr = parse_logic();
-            increment = parse_quick_assignment(move(expr));
+            increment = parse_assignment();
         }
         consume(TokenType::RPAREN, "Expected ')' after 'for'");
 
