@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // Validate the command
+    // Validate the commands
     if (command != "build" && command != "run") {
         cerr << "Unknown command: " << command << "\n";
         print_usage(cerr);
@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
     const string path = argv[2];
 
     try {
-        std::string source = read_file(path);
+        string source = read_file(path);
 
         Lexer lexer(source);
         auto tokens = lexer.lex();
