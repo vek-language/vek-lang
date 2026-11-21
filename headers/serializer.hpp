@@ -2,23 +2,27 @@
 
 #include <fstream>
 #include <iostream>
-#include <vector>
 #include <string>
+#include <array>
 #include <variant>
 #include <stdexcept>
 #include "bytecode.hpp"
+#include "../configs/config.hpp"
 
 using std::runtime_error;
-using std::vector;
+using std::array;
 using std::string;
+using std::get;
+using std::to_string;
 using std::ofstream;
 using std::ifstream;
 using std::holds_alternative;
 
 /*
     .vkc File Format
-    ------------------
-    [4 bytes] Magic Number ("VEKL")
+    ---------------------------------------------------
+    [4 bytes] Magic Number
+    [2 bytes] Bytecode Version (uint16)
     [4 bytes] Code size (uint32)
     [N bytes] Code array
     [4 bytes] Constant count (uint32)
@@ -29,10 +33,15 @@ using std::holds_alternative;
 
 class Serializer {
 private:
-    static constexpr uint32_t MAGIC_NUMBER = 0x56454B4C; // VEKL
+    static constexpr array<char, 4> MAGIC_NUMBER = vek::config::MAGIC;
+    static constexpr uint16_t BYTECODE_VERSION = vek::config::BYTECODE_VERSION;
 
     // Write helpers
     static void write_u8(ofstream& out, uint8_t val) {
+        out.write(reinterpret_cast<const char*>(&val), sizeof(val));
+    }
+
+    static void write_u16(ofstream& out, uint16_t val) {
         out.write(reinterpret_cast<const char*>(&val), sizeof(val));
     }
 
@@ -64,57 +73,63 @@ private:
         out.write(reinterpret_cast<const char*>(&val), sizeof(val));
     }
 
-    static void write_string(ofstream& out, const std::string& str) {
+    static void write_string(ofstream& out, const string& str) {
         write_u32(out, static_cast<uint32_t>(str.size()));
         out.write(str.data(), str.size());
     }
 
     // Read helpers
     static uint8_t read_u8(ifstream& in) {
-        uint8_t val; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+        uint8_t val = 0; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+    }
+
+    static uint16_t read_u16(ifstream& in) {
+        uint16_t val = 0; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
     }
 
     static uint32_t read_u32(ifstream& in) {
-        uint32_t val; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+        uint32_t val = 0; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
     }
 
     static int32_t read_i32(ifstream& in) {
-        int32_t val; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+        int32_t val = 0; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
     }
 
     static int64_t read_i64(ifstream& in) {
-        int64_t val; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+        int64_t val = 0; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
     }
 
     static float read_f32(ifstream& in) {
-        float val; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+        float val = 0; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
     }
 
     static double read_f64(ifstream& in) {
-        double val; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+        double val = 0; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
     }
 
     static bool read_bool(ifstream& in) {
-        bool val; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+        bool val = false; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
     }
 
     static char read_char(ifstream& in) {
-        char val; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
+        char val = '\0'; in.read(reinterpret_cast<char*>(&val), sizeof(val)); return val;
     }
 
-    static std::string read_string(ifstream& in) {
+    static string read_string(ifstream& in) {
         uint32_t len = read_u32(in);
-        std::string str(len, '\0');
+        string str(len, '\0');
         in.read(str.data(), len);
         return str;
     }
+
 public:
     static void save(const Bytecode& bytecode, const string& path) {
         ofstream file(path, std::ios::binary);
-        if(!file) throw runtime_error("Could not open file for writing: " + path);
+        if (!file) throw runtime_error("Could not open file for writing: " + path);
 
-        // Write magic number
-        write_u32(file, MAGIC_NUMBER);
+        // Header: Magic Number + Bytecode Version
+        file.write(MAGIC_NUMBER.data(), MAGIC_NUMBER.size());
+        write_u16(file, BYTECODE_VERSION);
 
         // Code
         write_u32(file, static_cast<uint32_t>(bytecode.code.size()));
@@ -125,20 +140,20 @@ public:
         for (const auto& val : bytecode.constants) {
             write_u8(file, static_cast<uint8_t>(val.index()));
 
-            if (std::holds_alternative<int32_t>(val)) {
-                write_i32(file, std::get<int32_t>(val));
-            } else if (std::holds_alternative<int64_t>(val)) {
-                write_i64(file, std::get<int64_t>(val));
-            } else if (std::holds_alternative<float>(val)) {
-                write_f32(file, std::get<float>(val));
-            } else if (std::holds_alternative<double>(val)) {
-                write_f64(file, std::get<double>(val));
-            } else if (std::holds_alternative<bool>(val)) {
-                write_bool(file, std::get<bool>(val));
-            } else if (std::holds_alternative<char>(val)) {
-                write_char(file, std::get<char>(val));
-            } else if (std::holds_alternative<std::string>(val)) {
-                write_string(file, std::get<std::string>(val));
+            if (holds_alternative<int32_t>(val)) {
+                write_i32(file, get<int32_t>(val));
+            } else if (holds_alternative<int64_t>(val)) {
+                write_i64(file, get<int64_t>(val));
+            } else if (holds_alternative<float>(val)) {
+                write_f32(file, get<float>(val));
+            } else if (holds_alternative<double>(val)) {
+                write_f64(file, get<double>(val));
+            } else if (holds_alternative<bool>(val)) {
+                write_bool(file, get<bool>(val));
+            } else if (holds_alternative<char>(val)) {
+                write_char(file, get<char>(val));
+            } else if (holds_alternative<string>(val)) {
+                write_string(file, get<string>(val));
             }
         }
 
@@ -152,14 +167,33 @@ public:
 
     static Bytecode load(const string& path) {
         ifstream file(path, std::ios::binary);
-        if(!file) throw runtime_error("Could not open file for reading: " + path);
+        if (!file) throw runtime_error("Could not open file for reading: " + path);
 
-        Bytecode bytecode;
-
-        // Check magic number
-        if (read_u32(file) != MAGIC_NUMBER) {
+        // Check Magic Number
+        array<char, 4> magic{};
+        file.read(magic.data(), magic.size());
+        if (!file || magic != MAGIC_NUMBER) {
             throw runtime_error("Invalid VekLang bytecode file.");
         }
+
+        // Check Bytecode Version
+        uint16_t file_version = read_u16(file);
+        if (file_version < BYTECODE_VERSION) {
+            throw runtime_error(
+                "Outdated bytecode file (v" + to_string(file_version) +
+                ", expected v" + to_string(BYTECODE_VERSION) +
+                "). Please recompile your source file."
+            );
+        }
+        if (file_version > BYTECODE_VERSION) {
+            throw runtime_error(
+                "Unsupported newer bytecode file (v" + to_string(file_version) +
+                ", VM supports v" + to_string(BYTECODE_VERSION) +
+                "). Please update VekLang."
+            );
+        }
+
+        Bytecode bytecode;
 
         // Code
         uint32_t code_size = read_u32(file);
@@ -187,6 +221,8 @@ public:
                 bytecode.constants.push_back(read_char(file));
             } else if (tag == 7) {
                 bytecode.constants.push_back(read_string(file));
+            } else {
+                throw runtime_error("Corrupted constant tag in bytecode file.");
             }
         }
 

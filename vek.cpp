@@ -17,6 +17,8 @@
 // Native functions
 //#include "./natives/natives_name.hpp"
 
+#include "./configs/config.hpp"
+
 namespace fs = std::filesystem;
 using std::runtime_error;
 
@@ -57,7 +59,8 @@ int main(int argc, char* argv[]) {
     const string command = argv[1];
 
     if (command == "version" || command == "--version" || command == "-v") {
-        cout << "VEK language 0.0.1" << endl;
+        cout << vek::config::NAME << " language: v" << vek::config::VERSION << endl;
+        cout << vek::config::NAME << " bytecode version: " << vek::config::BYTECODE_VERSION << endl;
         return 0;
     }
     if (command == "help" || command == "--help" || command == "-h") {

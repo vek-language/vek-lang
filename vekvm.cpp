@@ -4,6 +4,8 @@
 #include "./headers/vm.hpp"
 #include "./headers/serializer.hpp"
 
+#include "./configs/config.hpp"
+
 using std::string;
 
 using std::cerr;
@@ -23,7 +25,8 @@ int main(int argc, char* argv[]) {
 
     string arg = argv[1];
     if (arg == "version" || arg == "--version" || arg == "-v") {
-        cout << "VEK Virtual Machine 0.0.1" << endl;
+        cout << vek::config::NAME << " Virtual Machine: v" << vek::config::VM_VERSION << endl;
+        cout << vek::config::NAME << " bytecode version: " << vek::config::BYTECODE_VERSION << endl;
         return 0;
     }
     
