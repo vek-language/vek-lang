@@ -95,7 +95,8 @@ int main(int argc, char* argv[]) {
         Bytecode bytecode;
 
         // register_name_natives(bytecode);
-        compiler.compile(ast, bytecode);
+        auto exec_dir = fs::weakly_canonical(fs::path(argv[0])).parent_path();
+        compiler.compile(ast, bytecode, path, exec_dir);
 
         if (command == "build") {
             fs::path out = fs::path(path).replace_extension(".vkc");

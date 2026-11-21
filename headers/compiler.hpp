@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include <sstream>
 #include <vector>
 #include <memory>
@@ -9,7 +10,10 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+
 #include "AST.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
 #include "bytecode.hpp"
 #include "token.hpp"
 
@@ -19,6 +23,7 @@ using std::unique_ptr;
 using std::string;
 using std::unordered_map;
 using std::unordered_set;
+namespace fs = std::filesystem;
 
 class Compiler {
 private:
@@ -40,6 +45,9 @@ private:
     unordered_map<string, vector<unique_ptr<Stmt>>> parsed_modules;
     unordered_set<string> registered_modules;
     unordered_set<string> emitted_modules;
+
+    fs::path exec_dir;
+    fs::path src_file;
 
     // Scope helpers
     void push_scope() { 
@@ -114,19 +122,32 @@ private:
     }
 
     // Module loading
-    string resolve_load_path(LoadStmt* stmt) {
-        if (stmt->is_stdlib) return "libs/" + stmt->filepath + ".vek";
-        return stmt->filepath + ".vek";
+    fs::path resolve_load_path(LoadStmt* stmt, const fs::path& current_file) {
+        fs::path resolved;
+        if (stmt->is_stdlib) {
+            // Resolve relative to vek executable directory
+            fs::path base = exec_dir.empty() ? fs::current_path() : exec_dir;
+            resolved = base / "libs" / (stmt->filepath + ".vek");
+        } else {
+            // Resolve relative to the directory of the file doing the "load"
+            fs::path parent = current_file.has_parent_path()
+                ? current_file.parent_path()
+                : fs::current_path();
+            resolved = parent / (stmt->filepath + ".vek");
+        }
+        return fs::weakly_canonical(resolved);
     }
 
-    void parse_and_register_module(LoadStmt* stmt) {
-        string full_path = resolve_load_path(stmt);
-        if (registered_modules.count(full_path)) return;
-        registered_modules.insert(full_path);
+    void parse_and_register_module(LoadStmt* stmt, const fs::path& current_file) {
+        fs::path full_path = resolve_load_path(stmt, current_file);
+        string key = full_path.string();
+
+        if (registered_modules.count(key)) return;
+        registered_modules.insert(key);
 
         std::ifstream file(full_path);
         if (!file.is_open()) {
-            throw runtime_error("Could not find module: " + stmt->filepath);
+            throw runtime_error("Could not find module: " + stmt->filepath + " (looked at: " + key + ")");
         }
         std::stringstream buffer;
         buffer << file.rdbuf();
@@ -138,7 +159,7 @@ private:
 
         for (const auto& s : program) {
             if (auto* load = dynamic_cast<LoadStmt*>(s.get())) {
-                parse_and_register_module(load);
+                parse_and_register_module(load, full_path);
             }
         }
 
@@ -155,21 +176,23 @@ private:
             }
         }
 
-        parsed_modules[full_path] = std::move(program);
+        parsed_modules[key] = std::move(program);
     }
 
-    void emit_module_globals(LoadStmt* stmt, Bytecode& bytecode) {
-        string full_path = resolve_load_path(stmt);
-        parse_and_register_module(stmt);
+    void emit_module_globals(LoadStmt* stmt, const fs::path& current_file, Bytecode& bytecode) {
+        fs::path full_path = resolve_load_path(stmt, current_file);
+        string key = full_path.string();
 
-        if (emitted_modules.count(full_path)) return;
-        emitted_modules.insert(full_path);
+        parse_and_register_module(stmt, current_file);
 
-        const auto& program = parsed_modules[full_path];
+        if (emitted_modules.count(key)) return;
+        emitted_modules.insert(key);
+
+        const auto& program = parsed_modules[key];
 
         for (const auto& s : program) {
             if (auto* load = dynamic_cast<LoadStmt*>(s.get())) {
-                emit_module_globals(load, bytecode);
+                emit_module_globals(load, full_path, bytecode);
             }
         }
 
@@ -179,8 +202,6 @@ private:
         }
     }
 
-    // Conservative: returns true only when every path provably ends in 'ret'.
-    // Unknown shapes return false; callers then emit an implicit default return.
     bool ends_with_return(Stmt* stmt) {
         if (dynamic_cast<ReturnStmt*>(stmt)) return true;
         if (auto* block = dynamic_cast<BlockStmt*>(stmt)) {
@@ -446,7 +467,10 @@ private:
         if (auto* struct_decl = dynamic_cast<StructDecl*>(stmt)) {
             return; 
         }
-        if (auto* load_stmt = dynamic_cast<LoadStmt*>(stmt)) { emit_module_globals(load_stmt, bytecode); return; }
+        if (auto* load_stmt = dynamic_cast<LoadStmt*>(stmt)) { 
+            emit_module_globals(load_stmt, src_file, bytecode); 
+            return; 
+        }
         if (auto* if_stmt = dynamic_cast<IfStmt*>(stmt)) { compile_if(if_stmt, bytecode); return; }
         if (auto* while_stmt = dynamic_cast<WhileStmt*>(stmt)) { compile_while(while_stmt, bytecode); return; }
         if (auto* for_stmt = dynamic_cast<ForStmt*>(stmt)) { compile_for(for_stmt, bytecode); return; }
@@ -779,16 +803,23 @@ private:
     }
 
 public:
-    void compile(const vector<unique_ptr<Stmt>>& program, Bytecode& bytecode) {
+    void compile(const vector<unique_ptr<Stmt>>& program,
+            Bytecode& bytecode,
+            const fs::path& entry_file,
+            const fs::path& executable_dir = {}) 
+    {    
+        src_file = fs::weakly_canonical(entry_file);
+        exec_dir = executable_dir.empty() ? fs::path{} : fs::weakly_canonical(executable_dir);
+
         push_scope();
 
-        // Register functions
+        // Register functions, modules and structs
         for (const auto& stmt : program) {
             if (auto* func = dynamic_cast<FuncDecl*>(stmt.get())) {
                 functions[func->name] = func;
                 function_return_types[func->name] = token_to_type(func->return_type);
             } else if (auto* load = dynamic_cast<LoadStmt*>(stmt.get())) {
-                parse_and_register_module(load);
+                parse_and_register_module(load, src_file);
             } else if (auto* strct = dynamic_cast<StructDecl*>(stmt.get())) {
                 structs[strct->name] = strct;
             }
