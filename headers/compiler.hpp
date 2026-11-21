@@ -27,6 +27,17 @@ namespace fs = std::filesystem;
 
 class Compiler {
 private:
+    struct TypeInfo {
+        Type kind = Type::UNKNOWN;
+        std::string name; // for structs/classes, or empty for primitives
+
+        TypeInfo() = default;
+        TypeInfo(Type k, std::string n = "")
+            : kind(k), name(n.empty() ? type_to_string(k) : std::move(n)) {}
+
+        operator Type() const { return kind; }
+    };
+
     struct LoopContext {
         vector<size_t> break_patches;
         vector<size_t> continue_patches;
@@ -39,6 +50,7 @@ private:
 
     unordered_map<string, Type> function_return_types;
 
+    vector<unordered_map<string, string>> custom_types;
     vector<unordered_map<string, Type>> variable_scopes;
     vector<unordered_map<string, bool>> constant_scopes;
 
@@ -53,30 +65,12 @@ private:
     void push_scope() { 
         variable_scopes.push_back({}); 
         constant_scopes.push_back({});
+        custom_types.push_back({});
     }
     void pop_scope() { 
         variable_scopes.pop_back(); 
         constant_scopes.pop_back();
-    }
-    Type get_var_type(const string& name) {
-        for (int i = (int)variable_scopes.size() - 1; i >= 0; i--) {
-            auto it = variable_scopes[i].find(name);
-            if (it != variable_scopes[i].end()) return it->second;
-        }
-        return Type::UNKNOWN;
-    }
-    void set_var_type(const string& name, Type type) { 
-        variable_scopes.back()[name] = type; 
-    }
-    bool is_constant(const string& name) {
-        for (int i = (int)constant_scopes.size() - 1; i >= 0; i--) {
-            auto it = constant_scopes[i].find(name);
-            if (it != constant_scopes[i].end()) return it->second;
-        }
-        return false;
-    }
-    void set_const(const string& name, bool is_const) {
-        constant_scopes.back()[name] = is_const;
+        custom_types.pop_back();
     }
 
     // Type helpers
@@ -99,6 +93,41 @@ private:
         if (a == Type::FLOAT32 || b == Type::FLOAT32) return Type::FLOAT32;
         if (a == Type::INT64   || b == Type::INT64)   return Type::INT64;
         return Type::INT32;
+    }
+
+    Type get_var_type(const string& name) {
+        for (int i = (int)variable_scopes.size() - 1; i >= 0; i--) {
+            auto it = variable_scopes[i].find(name);
+            if (it != variable_scopes[i].end()) return it->second;
+        }
+        return Type::UNKNOWN;
+    }
+    void set_var_type(const string& name, Type type) { 
+        variable_scopes.back()[name] = type; 
+    }
+    bool is_constant(const string& name) {
+        for (int i = (int)constant_scopes.size() - 1; i >= 0; i--) {
+            auto it = constant_scopes[i].find(name);
+            if (it != constant_scopes[i].end()) return it->second;
+        }
+        return false;
+    }
+    void set_const(const string& name, bool is_const) {
+        constant_scopes.back()[name] = is_const;
+    }
+
+    void set_custom_type(const string& name, const string& type_name) {
+        if (!custom_types.empty()) {
+            custom_types.back()[name] = type_name;
+        }
+    }
+
+    string get_custom_type(const string& name) {
+        for (int i = static_cast<int>(custom_types.size()) - 1; i >= 0; --i) {
+            auto it = custom_types[i].find(name);
+            if (it != custom_types[i].end()) return it->second;
+        }
+        return "";
     }
 
     void emit_compound_math(TokenType op, Bytecode& bytecode) {
@@ -369,6 +398,28 @@ private:
     // Statements
     void compile_var_decl(VarDecl* var_decl, Bytecode& bytecode) {
         Type declared_type = token_to_type(var_decl->type);
+
+        // Handle struct/class variable declarations (e.g.: let Point p = { x: 5, y: 10 };)
+        if (var_decl->type == TokenType::IDENTIFIER) {
+            if (!structs.count(var_decl->type_name)) {
+                throw runtime_error("Unknown struct '" + var_decl->type_name + "'");
+            }
+            declared_type = Type::STRUCT;
+            set_custom_type(var_decl->name, var_decl->type_name);
+
+            if (auto* lit = dynamic_cast<StructLiteral*>(var_decl->initializer.get())) {
+                if (lit->struct_name.empty()) {
+                    lit->struct_name = var_decl->type_name;
+                }
+            } else if (auto* empty_arr = dynamic_cast<ArrayLiteral*>(var_decl->initializer.get())) {
+                if (empty_arr->elements.empty()) {
+                    var_decl->initializer = make_unique<StructLiteral>(
+                        var_decl->type_name, vector<pair<string, unique_ptr<Expr>>>{}
+                    );
+                }
+            }
+        }
+
         set_var_type(var_decl->name, var_decl->is_array ? Type::ARRAY : declared_type);
         set_const(var_decl->name, var_decl->is_const);
 
@@ -534,6 +585,21 @@ private:
             return Type::CHAR;
         }
         
+        if (auto* t_expr = dynamic_cast<TypeofExpr*>(expr)) {
+            Type t = compile_expr(t_expr->operand.get(), bytecode, Type::UNKNOWN);
+            bytecode.emit(OpCode::OP_POP);
+
+            string result = type_to_string(t);
+            if (auto* var = dynamic_cast<VariableExpr*>(t_expr->operand.get())) {
+                string custom = get_custom_type(var->name);
+                if (!custom.empty()) result = custom;
+            }
+
+            int idx = bytecode.add_const(result);
+            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            return Type::STR;
+        }
+
         if (auto* var = dynamic_cast<VariableExpr*>(expr)) {
             int idx = bytecode.add_const(var->name);
             bytecode.emit(OpCode::OP_LOAD, idx);
@@ -547,6 +613,10 @@ private:
             return Type::UNKNOWN;
         }
         if (auto* lit = dynamic_cast<StructLiteral*>(expr)) {
+            if (!structs.count(lit->struct_name)) {
+                throw runtime_error("Unknown struct '" + lit->struct_name + "'");
+            }
+            
             int name_idx = bytecode.add_const(lit->struct_name);
             uint8_t field_count = static_cast<uint8_t>(lit->initializers.size());
 
@@ -557,7 +627,7 @@ private:
             }
 
             bytecode.emit(OpCode::OP_NEW_STRUCT, name_idx, field_count);
-            return Type::UNKNOWN;
+            return TypeInfo(Type::STRUCT, lit->struct_name);
         }
 
         if (auto* assign_expr = dynamic_cast<AssignExpr*>(expr)) {
@@ -709,10 +779,10 @@ private:
 
         if (auto* cast = dynamic_cast<CastExpr*>(expr)) {
             compile_expr(cast->expr.get(), bytecode, Type::UNKNOWN);
-            
             bytecode.emit(OpCode::OP_CAST, static_cast<uint8_t>(cast->target_type));
             return token_to_type(cast->target_type);
         }
+
 
         if (auto* bin = dynamic_cast<BinaryExpr*>(expr)) {
             // Short-circuit logical operators

@@ -40,6 +40,8 @@ inline const unordered_map<std::string, TokenType> keywords = {
     {"break", TokenType::BREAK},
     {"continue", TokenType::CONTINUE},
 
+    {"typeof", TokenType::TYPEOF},
+
     {"print", TokenType::PRINT},
     {"input", TokenType::INPUT},
 

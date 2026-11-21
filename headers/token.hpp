@@ -10,7 +10,7 @@ struct SourceLocation {
     size_t offset;
 };
 
-enum class Type { INT32, INT64, FLOAT32, FLOAT64, BOOL, CHAR, STR, VOID, ARRAY, UNKNOWN };
+enum class Type { INT32, INT64, FLOAT32, FLOAT64, BOOL, CHAR, STR, VOID, ARRAY, STRUCT, CLASS, UNKNOWN };
 enum class TokenType {
     // Basic
     LOAD, CLASS, STRUCT, PUBLIC, PRIVATE, PROTECTED, THIS,
@@ -21,6 +21,7 @@ enum class TokenType {
     
     BREAK, CONTINUE,
     
+    TYPEOF,
     // Declaration types
     INT32, INT64, FLOAT32, FLOAT64, 
     VOID, STR, CHAR, BOOL, IDENTIFIER,
@@ -63,6 +64,8 @@ string type_to_string(Type t) {
         case Type::STR:     return "str"; 
         case Type::VOID:    return "void";
         case Type::ARRAY:   return "array";
+        case Type::STRUCT:  return "struct";
+        case Type::CLASS:   return "class";
         default:            return "unknown";
     }
 }

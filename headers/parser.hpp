@@ -380,7 +380,8 @@ private:
             consume(TokenType::LET, "Expected 'let' or 'const'");
         }
 
-        TokenType type = parse_type();
+        string type_name;
+        TokenType type = parse_decl_type(type_name);
         Token name = consume(TokenType::IDENTIFIER, "Expected a variable name");
         
         bool is_array = false;
@@ -400,7 +401,7 @@ private:
         } else if (is_const) {
             throw runtime_error("Constants must be initialized on declaration");
         } else {
-             if (!is_array) {
+            if (!is_array) {
                 if (type == TokenType::INT32 || type == TokenType::INT64) {
                     initializer = make_unique<Int64Literal>(0);
                 } else if (type == TokenType::FLOAT32 || type == TokenType::FLOAT64) {
@@ -411,12 +412,14 @@ private:
                     initializer = make_unique<StringLiteral>("");
                 } else if (type == TokenType::CHAR) {
                     initializer = make_unique<CharLiteral>('\0');
+                } else if (type == TokenType::IDENTIFIER) {
+                    initializer = make_unique<StructLiteral>(type_name, vector<pair<string, unique_ptr<Expr>>>{});
                 }
             }
         }
         
         consume(TokenType::SEMICOLON, "Expected ';'");
-        return make_unique<VarDecl>(type, name.text, is_array, is_const, move(array_size), move(initializer));
+        return make_unique<VarDecl>(type, name.text, is_array, is_const, move(array_size), move(initializer), move(type_name));
     }
 
     unique_ptr<Expr> parse_expression() {
@@ -478,6 +481,13 @@ private:
     }
 
     unique_ptr<Expr> parse_primary() {
+        if (match(TokenType::TYPEOF)) {
+            consume(TokenType::LPAREN, "Expected '(' after 'typeof'");
+            auto operand = parse_logic();
+            consume(TokenType::RPAREN, "Expected ')' after typeof expression");
+            return make_unique<TypeofExpr>(move(operand));
+        }
+
         if (match(TokenType::NOT)) {
             TokenType op = previous().type;
             auto right = parse_primary();
@@ -567,7 +577,7 @@ private:
                 
                 TokenType target_type = parse_type();
                 consume(TokenType::RPAREN, "Expected ')' after cast type");
-                auto expr = parse_primary();
+                auto expr = parse_factor();
                 return make_unique<CastExpr>(target_type, move(expr));
             }
             
@@ -576,6 +586,6 @@ private:
             consume(TokenType::RPAREN, "Expected ')'");
             return expr;
         }
-        throw runtime_error("Expected a value, variable, or '('");
+        throw runtime_error("Expected a value, variable, or '(', got '" + tokens[current].text + "'");
     }
 };

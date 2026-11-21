@@ -366,6 +366,7 @@ public:
                     }
                     break;
                 }
+                
                 case OpCode::OP_POP: {
                     pop();
                     break;

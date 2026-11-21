@@ -29,6 +29,11 @@ struct StructLiteral : Expr {
         : struct_name(move(n)), initializers(move(init)) {}
 };
 
+struct TypeofExpr : Expr {
+    unique_ptr<Expr> operand;
+    explicit TypeofExpr(unique_ptr<Expr> op) : operand(move(op)) {}
+};
+
 struct VariableExpr : Expr {
     string name;
     VariableExpr(string n) 
@@ -123,16 +128,16 @@ struct ExprStmt : Stmt {
 
 struct VarDecl : Stmt {
     TokenType type;
+    string type_name;
     string name;
     bool is_array;
     bool is_const;
     unique_ptr<Expr> array_size;
     unique_ptr<Expr> initializer;
-    string class_name;
     VarDecl(TokenType token_type, string n, bool is_arr, bool is_c,
-            unique_ptr<Expr> size, unique_ptr<Expr> init, string cls = "")
+            unique_ptr<Expr> size, unique_ptr<Expr> init, string t = "")
         : type(token_type), name(move(n)), is_array(is_arr), is_const(is_c),
-          array_size(move(size)), initializer(move(init)), class_name(move(cls)) {}
+          array_size(move(size)), initializer(move(init)), type_name(move(t)) {}
 };
 
 struct PrintStmt : Stmt {
