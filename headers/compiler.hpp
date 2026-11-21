@@ -140,7 +140,6 @@ private:
         }
     }
 
-
     bool is_numeric(Type t) { return t == Type::INT32 || t == Type::INT64 || t == Type::FLOAT32 || t == Type::FLOAT64; }
     bool is_string_or_char(Type t) { return t == Type::STR || t == Type::CHAR; }
     bool is_assignable(Type target, Type source) { return target == source || (is_numeric(target) && is_numeric(source)); }
@@ -399,7 +398,7 @@ private:
     void compile_var_decl(VarDecl* var_decl, Bytecode& bytecode) {
         Type declared_type = token_to_type(var_decl->type);
 
-        // Handle struct/class variable declarations (e.g.: let Point p = { x: 5, y: 10 };)
+        // Handle struct/class variable declarations
         if (var_decl->type == TokenType::IDENTIFIER) {
             if (!structs.count(var_decl->type_name)) {
                 throw runtime_error("Unknown struct '" + var_decl->type_name + "'");
@@ -407,15 +406,17 @@ private:
             declared_type = Type::STRUCT;
             set_custom_type(var_decl->name, var_decl->type_name);
 
-            if (auto* lit = dynamic_cast<StructLiteral*>(var_decl->initializer.get())) {
-                if (lit->struct_name.empty()) {
-                    lit->struct_name = var_decl->type_name;
-                }
-            } else if (auto* empty_arr = dynamic_cast<ArrayLiteral*>(var_decl->initializer.get())) {
-                if (empty_arr->elements.empty()) {
-                    var_decl->initializer = make_unique<StructLiteral>(
-                        var_decl->type_name, vector<pair<string, unique_ptr<Expr>>>{}
-                    );
+            if (!var_decl->is_array) {
+                if (auto* lit = dynamic_cast<StructLiteral*>(var_decl->initializer.get())) {
+                    if (lit->struct_name.empty()) {
+                        lit->struct_name = var_decl->type_name;
+                    }
+                } else if (auto* empty_arr = dynamic_cast<ArrayLiteral*>(var_decl->initializer.get())) {
+                    if (empty_arr->elements.empty()) {
+                        var_decl->initializer = make_unique<StructLiteral>(
+                            var_decl->type_name, vector<pair<string, unique_ptr<Expr>>>{}
+                        );
+                    }
                 }
             }
         }
@@ -436,6 +437,14 @@ private:
                 bytecode.emit(OpCode::OP_DEFINE_VAR, name_index);
 
                 for (size_t i = 0; i < arr_lit->elements.size(); ++i) {
+                    if (var_decl->type == TokenType::IDENTIFIER) {
+                        if (auto* lit = dynamic_cast<StructLiteral*>(arr_lit->elements[i].get())) {
+                            if (lit->struct_name.empty()) {
+                                lit->struct_name = var_decl->type_name;
+                            }
+                        }
+                    }
+
                     int var_idx = bytecode.add_const(var_decl->name);
                     bytecode.emit(OpCode::OP_LOAD, var_idx);
 
