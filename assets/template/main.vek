@@ -4,7 +4,7 @@ func main() int {
     print("Hello, please write your name :\n");
     input(name);
     print("Hello " + name + "!\n");
-    
+
     input(name); // To stop
     ret 0;
 }
