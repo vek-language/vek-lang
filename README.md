@@ -82,13 +82,6 @@ func main() int {
 }
 ```
 
-## TODO
-- [ ] Organize src .cpp files instead of using .hpp only.
-- [ ] Add classes.
-- [x] Implement while/for loops.
-- [x] CMake file.
-- [x] Compiler and VM supposed to be different things. (_vekvm {filename}.vekbc_ to run, _vek run/build_ - developer tool) (turn .vekbc is a bytecode file, with magic, 3 bytes in header.)
-
 ## Acknowledgements
 This project was built using AI tools as an occasional educational aid and a minor coding assistant (primarily for boilerplate and formatting). 
 The overall architecture, core compiler/VM design, implementation, and final debugging were entirely driven and executed by the author.
