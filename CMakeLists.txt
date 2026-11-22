@@ -13,12 +13,16 @@ add_library(vek_core STATIC
 target_include_directories(vek_core PUBLIC headers)
 target_compile_features(vek_core PUBLIC cxx_std_20)
 
+if(WIN32)
+    set(VEK_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/vek.rc")
+endif()
+
 # VEK DK
 add_executable(vek vek.cpp)
 target_link_libraries(vek PRIVATE vek_core)
 
 # VM
-add_executable(vekvm vekvm.cpp)
+add_executable(vekvm vekvm.cpp ${VEK_ICON_RC})
 target_link_libraries(vekvm PRIVATE vek_core)
 
 if(MINGW)
