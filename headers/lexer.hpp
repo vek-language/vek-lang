@@ -71,6 +71,8 @@ class Lexer {
     size_t start = 0;
     size_t current = 0;
 
+    size_t line = 1;
+
     // Helpers
     bool is_at_end() const { return current >= source.size(); }
 
@@ -79,7 +81,7 @@ class Lexer {
             unsigned char c = static_cast<unsigned char>(peek());
             
             if (std::isspace(c) || c < 32 || c > 126) {
-                ++current;
+                next();
             } else {
                 break;
             }
@@ -112,7 +114,7 @@ class Lexer {
         return Token{
             .type = type,
             .text = source.substr(start, current - start),
-            .location = SourceLocation{.offset = start}
+            .location = SourceLocation{start, line}
         };
     }
 
@@ -162,7 +164,10 @@ class Lexer {
 
     char next() {
         if(is_at_end()) { return '\0'; }
-        return source[current++];
+        char c = source[current++];
+        
+        if(c == '\n') line++;
+        return c;
     }
 public:
     explicit Lexer(const string& src) : source(src) {}
@@ -194,7 +199,7 @@ public:
                         next();
                         tokens.push_back(make_token(TokenType::AND));
                     } else {
-                        throw runtime_error("Unexpected character '&'");
+                        report_error(SourceLocation{start, line}, "Unexpected character '&'");
                     }
                     break;
                 case '|':
@@ -202,9 +207,10 @@ public:
                         next();
                         tokens.push_back(make_token(TokenType::OR));
                     } else {
-                        throw runtime_error("Unexpected character '|'");
+                        report_error(SourceLocation{start, line}, "Unexpected character '|'");
                     }
                     break;
+
 
                 case ';': tokens.push_back(make_token(TokenType::SEMICOLON)); break;
                 case '{': tokens.push_back(make_token(TokenType::LBRACE)); break;

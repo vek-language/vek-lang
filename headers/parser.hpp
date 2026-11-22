@@ -34,9 +34,17 @@ private:
     Token previous() const { return tokens[current - 1]; }
     bool match(TokenType type) { if (!check(type)) return false; ++current; return true; }
     Token consume(TokenType expected, const string& message) {
-        if (!check(expected)) throw runtime_error(message);
+        if (!check(expected)) report_error(previous().location, message);
         return tokens[current++];
     }
+
+    void consume_semicolon() {
+        if (!check(TokenType::SEMICOLON)) {
+            report_error(previous().location, "Expected ';'");
+        }
+        ++current;
+    }
+
 
     // Works just like declaration, but doesn't consumes semicolon
     unique_ptr<Stmt> parse_for_initializer() {
@@ -77,7 +85,7 @@ private:
             if (!dynamic_cast<VariableExpr*>(expr.get()) &&
                 !dynamic_cast<ArrayAccessExpr*>(expr.get()) &&
                 !dynamic_cast<FieldAccessExpr*>(expr.get())) {
-                throw runtime_error("Invalid assignment target.");
+                report_error(previous().location, "Invalid assignment target.");
             }
 
             return make_unique<AssignExpr>(move(expr), inner_op, move(value));
@@ -111,10 +119,10 @@ private:
                 path = previous().text;
                 is_stdlib = true;
             } else {
-                throw runtime_error("Expected file path or module name after 'load'");
+                report_error(previous().location, "Expected file path or module name after 'load'");
             }
             
-            consume(TokenType::SEMICOLON, "Expected ';' after load");
+            consume_semicolon();;
             return make_unique<LoadStmt>(path, is_stdlib);
         }
 
@@ -130,11 +138,11 @@ private:
         if (check(TokenType::FOR)) return parse_for();
 
         if (match(TokenType::BREAK)) {
-            consume(TokenType::SEMICOLON, "Expected ';'");
+            consume_semicolon();
             return make_unique<BreakStmt>();
         };
         if (match(TokenType::CONTINUE)) {
-            consume(TokenType::SEMICOLON, "Expected ';'");
+            consume_semicolon();
             return make_unique<ContinueStmt>();
         };
 
@@ -142,7 +150,7 @@ private:
             consume(TokenType::LPAREN, "Expected '(' after 'print'");
             auto expr = parse_logic();
             consume(TokenType::RPAREN, "Expected ')' after print expression");
-            consume(TokenType::SEMICOLON, "Expected ';'");
+            consume_semicolon();
             return make_unique<PrintStmt>(move(expr));
         }
 
@@ -153,7 +161,7 @@ private:
             auto* var_target = dynamic_cast<VariableExpr*>(expr.get());
 
             consume(TokenType::RPAREN, "Expected ')' after input expression");
-            consume(TokenType::SEMICOLON, "Expected ';'");
+            consume_semicolon();
             return make_unique<InputStmt>(move(expr));
         }
 
@@ -161,14 +169,14 @@ private:
             consume(TokenType::RET, "Expected 'ret'");
             unique_ptr<Expr> value = nullptr;
             if (!check(TokenType::SEMICOLON)) value = parse_logic();
-            consume(TokenType::SEMICOLON, "Expected ';'");
+            consume_semicolon();
             return make_unique<ReturnStmt>(move(value));
         }
 
         if (check(TokenType::LBRACE)) return parse_block();
 
         auto expr = parse_assignment();
-        consume(TokenType::SEMICOLON, "Expected ';'");
+        consume_semicolon();
         return make_unique<ExprStmt>(move(expr));
     }
 
@@ -214,7 +222,7 @@ private:
                 consume(TokenType::RBRACE, "Expected '}' to close 'private' block");
             
             } else {
-                throw runtime_error("Expected 'private' or 'public' block inside class");
+                report_error(previous().location, "Expected 'private' or 'public' block inside class");
             }
         }
 
@@ -232,7 +240,7 @@ private:
             consume(TokenType::LET, "Expected 'let' for struct field");
             TokenType type = parse_type();
             Token field_name = consume(TokenType::IDENTIFIER, "Expected field name");
-            consume(TokenType::SEMICOLON, "Expected ';'");
+            consume_semicolon();
             fields.emplace_back(type, field_name.text);
         }
 
@@ -285,14 +293,14 @@ private:
                 initializer = make_unique<ExprStmt>(move(expr));
             }
         } 
-        consume(TokenType::SEMICOLON, "Expected ';' after loop initializer");
+        consume_semicolon();
 
         // Condition
         unique_ptr<Expr> condition = nullptr;
         if (!check(TokenType::SEMICOLON)) {
             condition = parse_logic();
         }
-        consume(TokenType::SEMICOLON, "Expected ';' after loop condition");
+        consume_semicolon();
 
         // Increment
         unique_ptr<Expr> increment = nullptr;
@@ -347,7 +355,7 @@ private:
             return TokenType::IDENTIFIER; 
         }
 
-        throw runtime_error("Expected a type");
+        report_error(previous().location, "Expected a type");
     }
 
     TokenType parse_decl_type(string& out_class_name) {
@@ -368,7 +376,7 @@ private:
             ++current;
             return TokenType::IDENTIFIER; 
         }
-        throw runtime_error("Expected a type or class name");
+        report_error(previous().location, "Expected a type or class name");
     }
 
     unique_ptr<Stmt> parse_declaration() {
@@ -399,7 +407,7 @@ private:
         if (match(TokenType::EQUALS)) {
             initializer = parse_logic();
         } else if (is_const) {
-            throw runtime_error("Constants must be initialized on declaration");
+            report_error(previous().location, "Constants must be initialized on declaration");
         } else {
             if (!is_array) {
                 if (type == TokenType::INT32 || type == TokenType::INT64) {
@@ -418,7 +426,7 @@ private:
             }
         }
         
-        consume(TokenType::SEMICOLON, "Expected ';'");
+        consume_semicolon();
         return make_unique<VarDecl>(type, name.text, is_array, is_const, move(array_size), move(initializer), move(type_name));
     }
 
@@ -586,6 +594,6 @@ private:
             consume(TokenType::RPAREN, "Expected ')'");
             return expr;
         }
-        throw runtime_error("Expected a value, variable, or '(', got '" + tokens[current].text + "'");
+        report_error(previous().location, "Expected a value, variable, or '(', got '" + tokens[current].text + "'");
     }
 };

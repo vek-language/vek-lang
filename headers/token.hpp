@@ -2,12 +2,15 @@
 
 #include <string>
 #include <cstddef>
+#include <stdexcept>
 
 using std::size_t;
 using std::string;
+using std::runtime_error;
 
 struct SourceLocation {
     size_t offset;
+    size_t line;
 };
 
 enum class Type { INT32, INT64, FLOAT32, FLOAT64, BOOL, CHAR, STR, VOID, ARRAY, STRUCT, CLASS, UNKNOWN };
@@ -52,6 +55,13 @@ struct Token {
     string text;
     SourceLocation location;
 };
+
+[[noreturn]] // For compiler
+inline void report_error(const SourceLocation& loc, const std::string& message) {
+    throw runtime_error(
+        "[Line " + std::to_string(loc.line) + "] " + message
+    );
+}
 
 string type_to_string(Type t) { 
     switch(t) {
