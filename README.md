@@ -22,7 +22,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-[![Download VekLang](https://img.shields.io/badge/Download-v0.0.2-red?style=for-the-badge&logo=windows)](https://github.com/vek-language/vek-lang/releases/latest)  
+[![Download VekLang](https://img.shields.io/badge/Download-v0.0.3-red?style=for-the-badge&logo=windows)](https://github.com/vek-language/vek-lang/releases/latest)  
 ---
 ![Demo](https://github.com/user-attachments/assets/4cc4a84d-66de-484e-90d9-a2a4c8d13456)
 ---
