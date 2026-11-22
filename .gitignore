@@ -9,4 +9,5 @@
 
 # CMake
 build/
+build-release/
 cmake-build-*/

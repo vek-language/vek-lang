@@ -20,3 +20,8 @@ target_link_libraries(vek PRIVATE vek_core)
 # VM
 add_executable(vekvm vekvm.cpp)
 target_link_libraries(vekvm PRIVATE vek_core)
+
+if(MINGW)
+    target_link_options(vek PRIVATE -static -static-libgcc -static-libstdc++)
+    target_link_options(vekvm PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
