@@ -132,20 +132,20 @@ class Lexer {
         while (!is_at_end() && peek() != quote) {
             if (peek() == '\\') {
                 next();
-                if (is_at_end()) throw runtime_error("Unterminated escape sequence");
+                if (is_at_end()) report_error(SourceLocation{start, line}, "Unterminated escape sequence");
                 value += decode_escape(next());
             } else {
                 value += next();
             }
         }
-        if (is_at_end()) throw runtime_error("Unterminated literal");
+        if (is_at_end()) report_error(SourceLocation{start, line}, "Unterminated literal");
         next();
         return value;
     }
 
     Token scan_char(char quote) {
         std::string v = scan_quoted(quote);
-        if (v.size() != 1) throw runtime_error("Char literal must contain exactly one character");
+        if (v.size() != 1) report_error(SourceLocation{start, line}, "Char literal must contain exactly one character");
         Token token = make_token(TokenType::CHAR_LITERAL);
         token.text = std::move(v);
         return token;
@@ -292,7 +292,7 @@ public:
                     else { tokens.push_back(make_token(TokenType::LESS_THAN)); }
                     break;
 
-                default:
+                default: {
                     if(std::isalpha(c) || c == '_') {
                         identifier();
                         Token tok = make_token(TokenType::IDENTIFIER);
@@ -327,9 +327,10 @@ public:
                         }
                     } else { 
                         std::cout << "Unknown character: '" << c << "' (ASCII: " << (int)c << ")\n";
-                        throw runtime_error("Unexpected character."); 
+                        report_error(SourceLocation{start, line}, "Unexpected character."); 
                     }
                     break;
+                }
             }
         }
         return tokens;
