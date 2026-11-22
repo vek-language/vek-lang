@@ -3,6 +3,15 @@
 *.vkc
 *.vek
 
+# IDE
+.idea/
+.vscode/
+
+# CMake
+build/*
+build-release/*
+cmake-build-*/
+
 # Don't ignore
 !libs/
 !libs/**/*.vek
@@ -13,12 +22,3 @@
 !assets/template/project/**
 !assets/template/project/build/
 !assets/template/project/build/**
-
-# IDE
-.idea/
-.vscode/
-
-# CMake
-build/
-build-release/
-cmake-build-*/
