@@ -1,9 +1,11 @@
 #pragma once
+
 #include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <vector>
 #include <memory>
+
 #include "token.hpp"
 #include "AST.hpp"
 
@@ -45,24 +47,32 @@ private:
         ++current;
     }
 
+    template <typename T>
+    unique_ptr<T> set_loc(unique_ptr<T> node, const Token& tok) {
+        node->location = tok.location;
+        return node;
+    }
 
     // Works just like declaration, but doesn't consumes semicolon
     unique_ptr<Stmt> parse_for_initializer() {
         if (check(TokenType::LET) || check(TokenType::CONST)) {
+            Token keyword = tokens[current];
             bool is_const = match(TokenType::CONST);
             if (!is_const) consume(TokenType::LET, "Expected 'let'");
-            
+
             TokenType type = parse_type();
             Token name = consume(TokenType::IDENTIFIER, "Expected name");
             consume(TokenType::EQUALS, "Expected '='");
             auto init_expr = parse_logic();
-            
-            return make_unique<VarDecl>(type, name.text, false, is_const, nullptr, move(init_expr));
+
+            return set_loc(make_unique<VarDecl>(type, name.text, false, is_const, nullptr, move(init_expr)), keyword);
         }
-        
-        return make_unique<ExprStmt>(parse_logic());
+
+        Token start = tokens[current];
+        auto expr = parse_logic();
+        return set_loc(make_unique<ExprStmt>(move(expr)), start);
     }
-    
+
     // Assignment (=, +=, -=, *=, /=) (no semicolon)
     unique_ptr<Expr> parse_assignment() {
         auto expr = parse_logic();
@@ -88,7 +98,7 @@ private:
                 report_error(previous().location, "Invalid assignment target.");
             }
 
-            return make_unique<AssignExpr>(move(expr), inner_op, move(value));
+            return set_loc(make_unique<AssignExpr>(move(expr), inner_op, move(value)), previous());
         }
 
         return expr;
@@ -99,7 +109,7 @@ private:
         while (match(TokenType::AND) || match(TokenType::OR)) {
             TokenType op = previous().type;
             auto right = parse_expression();
-            expr = make_unique<BinaryExpr>(move(expr), op, move(right));
+            expr = set_loc(make_unique<BinaryExpr>(move(expr), op, move(right)), previous());
         }
         return expr;
     }
@@ -107,6 +117,7 @@ private:
     // Parsing
     unique_ptr<Stmt> parse_statement() {
         if (match(TokenType::LOAD)) {
+            Token keyword = previous();
             string path;
             bool is_stdlib = false;
 
@@ -121,15 +132,15 @@ private:
             } else {
                 report_error(previous().location, "Expected file path or module name after 'load'");
             }
-            
-            consume_semicolon();;
-            return make_unique<LoadStmt>(path, is_stdlib);
+
+            consume_semicolon();
+            return set_loc(make_unique<LoadStmt>(path, is_stdlib), keyword);
         }
 
         if (check(TokenType::LET) || check(TokenType::CONST)) {
             return parse_declaration();
         }
-        
+
         if (check(TokenType::STRUCT)) return parse_struct();
         if (check(TokenType::CLASS)) return parse_class();
         if (check(TokenType::FUNC)) return parse_function();
@@ -138,73 +149,78 @@ private:
         if (check(TokenType::FOR)) return parse_for();
 
         if (match(TokenType::BREAK)) {
+            Token keyword = previous();
             consume_semicolon();
-            return make_unique<BreakStmt>();
+            return set_loc(make_unique<BreakStmt>(), keyword);
         };
         if (match(TokenType::CONTINUE)) {
+            Token keyword = previous();
             consume_semicolon();
-            return make_unique<ContinueStmt>();
+            return set_loc(make_unique<ContinueStmt>(), keyword);
         };
 
         if (match(TokenType::PRINT)) {
+            Token keyword = previous();
             consume(TokenType::LPAREN, "Expected '(' after 'print'");
             auto expr = parse_logic();
             consume(TokenType::RPAREN, "Expected ')' after print expression");
             consume_semicolon();
-            return make_unique<PrintStmt>(move(expr));
+            return set_loc(make_unique<PrintStmt>(move(expr)), keyword);
         }
 
         if (match(TokenType::INPUT)) {
+            Token keyword = previous();
             consume(TokenType::LPAREN, "Expected '(' after 'input'");
-            
+
             auto expr = parse_logic();
             auto* var_target = dynamic_cast<VariableExpr*>(expr.get());
 
             consume(TokenType::RPAREN, "Expected ')' after input expression");
             consume_semicolon();
-            return make_unique<InputStmt>(move(expr));
+            return set_loc(make_unique<InputStmt>(move(expr)), keyword);
         }
 
         if (check(TokenType::RET)) {
-            consume(TokenType::RET, "Expected 'ret'");
+            Token keyword = consume(TokenType::RET, "Expected 'ret'");
             unique_ptr<Expr> value = nullptr;
             if (!check(TokenType::SEMICOLON)) value = parse_logic();
             consume_semicolon();
-            return make_unique<ReturnStmt>(move(value));
+            return set_loc(make_unique<ReturnStmt>(move(value)), keyword);
         }
 
         if (check(TokenType::LBRACE)) return parse_block();
 
+        Token start = tokens[current];
         auto expr = parse_assignment();
         consume_semicolon();
-        return make_unique<ExprStmt>(move(expr));
+        return set_loc(make_unique<ExprStmt>(move(expr)), start);
     }
 
     unique_ptr<Stmt> parse_block() {
-        consume(TokenType::LBRACE, "Expected '{'");
+        Token lbrace = consume(TokenType::LBRACE, "Expected '{'");
         vector<unique_ptr<Stmt>> body;
-        while (!check(TokenType::RBRACE) && !is_at_end()) 
+        while (!check(TokenType::RBRACE) && !is_at_end())
             body.push_back(parse_statement());
 
         consume(TokenType::RBRACE, "Expected '}'");
-        return make_unique<BlockStmt>(move(body));
+        return set_loc(make_unique<BlockStmt>(move(body)), lbrace);
     }
 
     unique_ptr<Stmt> parse_class_member() {
         if (check(TokenType::FUNC)) {
             return parse_function();
         }
-        
+
         return parse_declaration();
     }
-    
+
     unique_ptr<Stmt> parse_class() {
-        consume(TokenType::CLASS, "Expected 'class'");
+        Token keyword = consume(TokenType::CLASS, "Expected 'class'");
 
         Token name = consume(TokenType::IDENTIFIER, "Excepted class name");
         consume(TokenType::LBRACE, "Expected '{'");
 
-        auto class_decl = make_unique<ClassDecl>(name.text);
+        auto class_decl = set_loc(make_unique<ClassDecl>(name.text), keyword);
         while (!check(TokenType::RBRACE) && !is_at_end()) {
             // Access modifiers
             if(match(TokenType::PUBLIC)) {
@@ -220,7 +236,7 @@ private:
                     class_decl->private_members.push_back(parse_class_member());
                 }
                 consume(TokenType::RBRACE, "Expected '}' to close 'private' block");
-            
+
             } else {
                 report_error(previous().location, "Expected 'private' or 'public' block inside class");
             }
@@ -231,7 +247,7 @@ private:
     }
 
     unique_ptr<Stmt> parse_struct() {
-        consume(TokenType::STRUCT, "Expected 'struct'");
+        Token keyword = consume(TokenType::STRUCT, "Expected 'struct'");
         Token name = consume(TokenType::IDENTIFIER, "Expected struct name");
         consume(TokenType::LBRACE, "Expected '{'");
 
@@ -245,15 +261,15 @@ private:
         }
 
         consume(TokenType::RBRACE, "Expected '}'");
-        return make_unique<StructDecl>(name.text, move(fields));
+        return set_loc(make_unique<StructDecl>(name.text, move(fields)), keyword);
     }
-    
+
     unique_ptr<Stmt> parse_if() {
-        consume(TokenType::IF, "Expected 'if'");
+        Token keyword = consume(TokenType::IF, "Expected 'if'");
         consume(TokenType::LPAREN, "Expected '('");
         auto condition = parse_logic();
         consume(TokenType::RPAREN, "Expected ')'");
-        
+
         auto then_branch = parse_block();
 
         unique_ptr<Stmt> else_branch = nullptr;
@@ -265,34 +281,35 @@ private:
             }
         }
 
-        return make_unique<IfStmt>(move(condition), move(then_branch), move(else_branch));
+        return set_loc(make_unique<IfStmt>(move(condition), move(then_branch), move(else_branch)), keyword);
     }
 
     unique_ptr<Stmt> parse_while() {
-        consume(TokenType::WHILE, "Expected 'while'");
+        Token keyword = consume(TokenType::WHILE, "Expected 'while'");
         consume(TokenType::LPAREN, "Expected '('");
         auto condition = parse_logic();
         consume(TokenType::RPAREN, "Expected ')'");
-        
+
         // Body
         auto while_branch = parse_block();
-        return make_unique<WhileStmt>(move(condition), move(while_branch));
+        return set_loc(make_unique<WhileStmt>(move(condition), move(while_branch)), keyword);
     }
 
     unique_ptr<Stmt> parse_for() {
-        consume(TokenType::FOR, "Expected 'for'");
+        Token keyword = consume(TokenType::FOR, "Expected 'for'");
         consume(TokenType::LPAREN, "Expected '('");
-        
+
         // Index
         unique_ptr<Stmt> initializer = nullptr;
         if (!check(TokenType::SEMICOLON)) {
             if (check(TokenType::LET) || check(TokenType::CONST)) {
-                initializer = parse_for_initializer(); 
+                initializer = parse_for_initializer();
             } else {
+                Token start = tokens[current];
                 auto expr = parse_logic();
-                initializer = make_unique<ExprStmt>(move(expr));
+                initializer = set_loc(make_unique<ExprStmt>(move(expr)), start);
             }
-        } 
+        }
         consume_semicolon();
 
         // Condition
@@ -311,14 +328,14 @@ private:
 
         // Body
         auto body = parse_block();
-        return make_unique<ForStmt>(move(initializer), move(condition), move(increment), move(body));
+        return set_loc(make_unique<ForStmt>(move(initializer), move(condition), move(increment), move(body)), keyword);
     }
 
     unique_ptr<Stmt> parse_function() {
-        consume(TokenType::FUNC, "Expected 'func'");
+        Token keyword = consume(TokenType::FUNC, "Expected 'func'");
         Token name = consume(TokenType::IDENTIFIER, "Expected function name");
         consume(TokenType::LPAREN, "Expected '('");
-        
+
         vector<Param> params;
         if (!check(TokenType::RPAREN)) {
             do {
@@ -330,7 +347,7 @@ private:
         }
         consume(TokenType::RPAREN, "Expected ')'");
         TokenType return_type = parse_type();
-        
+
         consume(TokenType::LBRACE, "Expected '{'");
         vector<unique_ptr<Stmt>> body;
         while (!check(TokenType::RBRACE) && !is_at_end()) {
@@ -338,7 +355,7 @@ private:
         }
         consume(TokenType::RBRACE, "Expected '}'");
 
-        return make_unique<FuncDecl>(return_type, name.text, move(params), move(body));
+        return set_loc(make_unique<FuncDecl>(return_type, name.text, move(params), move(body)), keyword);
     }
 
     TokenType parse_type() {
@@ -352,7 +369,7 @@ private:
         if (match(TokenType::VOID)) return TokenType::VOID;
 
         if (match(TokenType::IDENTIFIER)) {
-            return TokenType::IDENTIFIER; 
+            return TokenType::IDENTIFIER;
         }
 
         report_error(previous().location, "Expected a type");
@@ -360,9 +377,9 @@ private:
 
     TokenType parse_decl_type(string& out_class_name) {
         out_class_name.clear();
-        if (check(TokenType::INT32) 
-            || check(TokenType::INT64) 
-            || check(TokenType::FLOAT32) 
+        if (check(TokenType::INT32)
+            || check(TokenType::INT64)
+            || check(TokenType::FLOAT32)
             || check(TokenType::FLOAT64)
             || check(TokenType::STR)
             || check(TokenType::CHAR)
@@ -374,14 +391,15 @@ private:
         if (check(TokenType::IDENTIFIER)) {
             out_class_name = tokens[current].text;
             ++current;
-            return TokenType::IDENTIFIER; 
+            return TokenType::IDENTIFIER;
         }
         report_error(previous().location, "Expected a type or class name");
     }
 
     unique_ptr<Stmt> parse_declaration() {
+        Token keyword = tokens[current];
         bool is_const = false;
-        
+
         if (match(TokenType::CONST)) {
             is_const = true;
         } else {
@@ -391,10 +409,10 @@ private:
         string type_name;
         TokenType type = parse_decl_type(type_name);
         Token name = consume(TokenType::IDENTIFIER, "Expected a variable name");
-        
+
         bool is_array = false;
         unique_ptr<Expr> array_size = nullptr;
-        
+
         if (match(TokenType::LBRACKET)) {
             is_array = true;
             if (!check(TokenType::RBRACKET)) {
@@ -425,25 +443,25 @@ private:
                 }
             }
         }
-        
+
         consume_semicolon();
-        return make_unique<VarDecl>(type, name.text, is_array, is_const, move(array_size), move(initializer), move(type_name));
+        return set_loc(make_unique<VarDecl>(type, name.text, is_array, is_const, move(array_size), move(initializer), move(type_name)), keyword);
     }
 
     unique_ptr<Expr> parse_expression() {
         auto expr = parse_term();
-        while (match(TokenType::PLUS) 
-            || match(TokenType::MINUS) 
+        while (match(TokenType::PLUS)
+            || match(TokenType::MINUS)
             || match(TokenType::GREATER_THAN)
-            || match(TokenType::LESS_THAN) 
+            || match(TokenType::LESS_THAN)
             || match(TokenType::GREATER_EQUAL)
             || match(TokenType::LESS_EQUAL)
-            || match(TokenType::EQUALS_EQUALS) 
+            || match(TokenType::EQUALS_EQUALS)
             || match(TokenType::NOT_EQUALS))
         {
             TokenType op = previous().type;
             auto right = parse_term();
-            expr = make_unique<BinaryExpr>(move(expr), op, move(right));
+            expr = set_loc(make_unique<BinaryExpr>(move(expr), op, move(right)), previous());
         }
         return expr;
     }
@@ -453,7 +471,7 @@ private:
         while (match(TokenType::STAR) || match(TokenType::SLASH)) {
             TokenType op = previous().type;
             auto right = parse_factor();
-            expr = make_unique<BinaryExpr>(move(expr), op, move(right));
+            expr = set_loc(make_unique<BinaryExpr>(move(expr), op, move(right)), previous());
         }
         return expr;
     }
@@ -463,12 +481,13 @@ private:
 
         while (true) {
             if (match(TokenType::LBRACKET)) {
+                Token lbracket = previous();
                 auto index = parse_logic();
                 consume(TokenType::RBRACKET, "Expected ']'");
-                expr = make_unique<ArrayAccessExpr>(move(expr), move(index));
+                expr = set_loc(make_unique<ArrayAccessExpr>(move(expr), move(index)), lbracket);
             } else if (match(TokenType::DOT)) {
                 Token name = consume(TokenType::IDENTIFIER, "Expected field or method name");
-                
+
                 if (match(TokenType::LPAREN)) {
                     // It's a method call
                     vector<unique_ptr<Expr>> args;
@@ -476,11 +495,12 @@ private:
                         do { args.push_back(parse_logic()); } while (match(TokenType::COMMA));
                     }
                     consume(TokenType::RPAREN, "Expected ')'");
-                    expr = make_unique<MethodCallExpr>(move(expr), name.text, move(args));
+                    expr = set_loc(make_unique<MethodCallExpr>(move(expr), name.text, move(args)), name);
                 } else {
                     // It's a field access
-                    expr = make_unique<FieldAccessExpr>(move(expr), name.text);
+                    expr = set_loc(make_unique<FieldAccessExpr>(move(expr), name.text), name);
                 }
+
             } else {
                 break;
             }
@@ -490,55 +510,68 @@ private:
 
     unique_ptr<Expr> parse_primary() {
         if (match(TokenType::TYPEOF)) {
+            Token keyword = previous();
             consume(TokenType::LPAREN, "Expected '(' after 'typeof'");
             auto operand = parse_logic();
             consume(TokenType::RPAREN, "Expected ')' after typeof expression");
-            return make_unique<TypeofExpr>(move(operand));
+            return set_loc(make_unique<TypeofExpr>(move(operand)), keyword);
         }
 
         if (match(TokenType::NOT)) {
             TokenType op = previous().type;
             auto right = parse_primary();
-            
-            return make_unique<UnaryExpr>(op, move(right));
+
+            return set_loc(make_unique<UnaryExpr>(op, move(right)), previous());
         }
 
         if (match(TokenType::MINUS)) {
             auto expr = parse_primary();
-            
+
             // turns into `0 - number`
-            return make_unique<BinaryExpr>(
+            return set_loc(make_unique<BinaryExpr>(
                 make_unique<Int64Literal>(0),
                 TokenType::MINUS,
                 move(expr)
-            );
+            ), previous());
         }
-        
+
         if (match(TokenType::INT64_LITERAL)) {
-            return make_unique<Int64Literal>(std::stoll(previous().text));
+            return set_loc(make_unique<Int64Literal>(std::stoll(previous().text)), previous());
         }
-        
+
         if (match(TokenType::FLOAT64_LITERAL)) {
-            string text = previous().text;
+            Token tok = previous();
+            string text = tok.text;
             if (!text.empty() && (text.back() == 'd' || text.back() == 'D')) {
                 text.pop_back();
             }
-            return make_unique<Float64Literal>(std::stod(text));
+            return set_loc(make_unique<Float64Literal>(std::stod(text)), tok);
         }
 
         if (match(TokenType::FLOAT32_LITERAL)) {
-            string text = previous().text;
+            Token tok = previous();
+            string text = tok.text;
             if (!text.empty() && (text.back() == 'f' || text.back() == 'F')) {
                 text.pop_back();
             }
-            return make_unique<Float32Literal>(std::stof(text));
+            return set_loc(make_unique<Float32Literal>(std::stof(text)), tok);
         }
 
-        if (match(TokenType::BOOL_LITERAL)) return make_unique<BoolLiteral>(previous().text == "true");
-        if (match(TokenType::STR_LITERAL)) return make_unique<StringLiteral>(previous().text);
-        if (match(TokenType::CHAR_LITERAL)) return make_unique<CharLiteral>(previous().text[0]);
+        if (match(TokenType::BOOL_LITERAL)) {
+            Token tok = previous();
+            return set_loc(make_unique<BoolLiteral>(tok.text == "true"), tok);
+        }
+        if (match(TokenType::STR_LITERAL)) {
+            Token tok = previous();
+            return set_loc(make_unique<StringLiteral>(tok.text), tok);
+        }
+        if (match(TokenType::CHAR_LITERAL)) {
+            Token tok = previous();
+            return set_loc(make_unique<CharLiteral>(tok.text[0]), tok);
+        }
 
         if (match(TokenType::LBRACE)) {
+            Token lbrace = previous();
             // Check for struct literal
             if (check(TokenType::IDENTIFIER) && current + 1 < tokens.size() && tokens[current + 1].type == TokenType::COLON) {
                 vector<pair<string, unique_ptr<Expr>>> inits;
@@ -549,7 +582,7 @@ private:
                     inits.emplace_back(field_name.text, move(val));
                 } while (match(TokenType::COMMA));
                 consume(TokenType::RBRACE, "Expected '}'");
-                return make_unique<StructLiteral>("", move(inits)); // Name inferred by compiler
+                return set_loc(make_unique<StructLiteral>("", move(inits)), lbrace); // Name inferred by compiler
             }
 
             // Array literal
@@ -560,35 +593,36 @@ private:
                 } while (match(TokenType::COMMA));
             }
             consume(TokenType::RBRACE, "Expected '}'");
-            return make_unique<ArrayLiteral>(move(elements));
+            return set_loc(make_unique<ArrayLiteral>(move(elements)), lbrace);
         }
 
         if (match(TokenType::IDENTIFIER)) {
-            string name = previous().text;
+            Token name = previous();
             if (match(TokenType::LPAREN)) {
                 vector<unique_ptr<Expr>> args;
                 if (!check(TokenType::RPAREN)) {
                     do { args.push_back(parse_logic()); } while (match(TokenType::COMMA));
                 }
                 consume(TokenType::RPAREN, "Expected ')'");
-                return make_unique<CallExpr>(name, move(args));
+                return set_loc(make_unique<CallExpr>(name.text, move(args)), name);
             }
-            return make_unique<VariableExpr>(name);
+            return set_loc(make_unique<VariableExpr>(name.text), name);
         }
 
         if (match(TokenType::LPAREN)) {
+            Token lparen = previous();
             // cast check
-            if (check(TokenType::INT32) || check(TokenType::INT64) || 
-                check(TokenType::FLOAT32) || check(TokenType::FLOAT64) || 
-                check(TokenType::STR) || check(TokenType::CHAR) || 
+            if (check(TokenType::INT32) || check(TokenType::INT64) ||
+                check(TokenType::FLOAT32) || check(TokenType::FLOAT64) ||
+                check(TokenType::STR) || check(TokenType::CHAR) ||
                 check(TokenType::BOOL)) {
-                
+
                 TokenType target_type = parse_type();
                 consume(TokenType::RPAREN, "Expected ')' after cast type");
                 auto expr = parse_factor();
-                return make_unique<CastExpr>(target_type, move(expr));
+                return set_loc(make_unique<CastExpr>(target_type, move(expr)), lparen);
             }
-            
+
             // Fallback to grouping
             auto expr = parse_logic();
             consume(TokenType::RPAREN, "Expected ')'");

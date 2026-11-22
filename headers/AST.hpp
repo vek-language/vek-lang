@@ -11,8 +11,10 @@ using std::unique_ptr;
 using std::move;
 using std::pair;
 
-struct Expr { virtual ~Expr() = default; };
+struct Expr { SourceLocation location{0, 1}; virtual ~Expr() = default; };
+struct Stmt { SourceLocation location{0, 1}; virtual ~Stmt() = default; };
 
+// Expressions
 struct Int32Literal : Expr { int32_t value; Int32Literal(int32_t value) : value(value) {} };
 struct Int64Literal : Expr { int64_t value; Int64Literal(int64_t value) : value(value) {} };
 struct Float32Literal : Expr { float value; Float32Literal(float value) : value(value) {} };
@@ -108,8 +110,7 @@ struct BinaryExpr : Expr {
         : left(move(l)), op(operation), right(move(r)) {}
 };
 
-struct Stmt { virtual ~Stmt() = default; };
-
+// Statements
 struct BreakStmt : Stmt {};
 struct ContinueStmt : Stmt {};
 

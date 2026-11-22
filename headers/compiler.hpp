@@ -48,6 +48,7 @@ private:
     unordered_map<string, StructDecl*> structs;
     unordered_map<string, FuncDecl*> functions;
 
+    Type current_return_type = Type::UNKNOWN;
     unordered_map<string, Type> function_return_types;
 
     vector<unordered_map<string, string>> custom_types;
@@ -57,6 +58,8 @@ private:
     unordered_map<string, vector<unique_ptr<Stmt>>> parsed_modules;
     unordered_set<string> registered_modules;
     unordered_set<string> emitted_modules;
+
+    SourceLocation current_loc{0, 1};
 
     fs::path exec_dir;
     fs::path src_file;
@@ -136,7 +139,7 @@ private:
             case TokenType::MINUS: bytecode.emit(OpCode::OP_SUBTRACT); break;
             case TokenType::STAR:  bytecode.emit(OpCode::OP_MULTIPLY); break;
             case TokenType::SLASH: bytecode.emit(OpCode::OP_DIVIDE); break;
-            default: throw runtime_error("Unknown compound assignment operator");
+            default: report_error(current_loc, "Unknown compound assignment operator");
         }
     }
 
@@ -175,7 +178,7 @@ private:
 
         std::ifstream file(full_path);
         if (!file.is_open()) {
-            throw runtime_error("Could not find module: " + stmt->filepath + " (looked at: " + key + ")");
+            report_error(current_loc, "Could not find module: " + stmt->filepath + " (looked at: " + key + ")");
         }
         std::stringstream buffer;
         buffer << file.rdbuf();
@@ -194,7 +197,7 @@ private:
         for (const auto& s : program) {
             if (auto* func = dynamic_cast<FuncDecl*>(s.get())) {
                 if (func->name == "main") {
-                    throw runtime_error("Modules cannot define 'main'.");
+                    report_error(current_loc, "Modules cannot define 'main'.");
                 }
                 functions[func->name] = func;
                 function_return_types[func->name] = token_to_type(func->return_type);
@@ -255,14 +258,24 @@ private:
             set_var_type(param.name, token_to_type(param.type));
         }
         
+        Type saved_return_type = current_return_type;
+        current_return_type = token_to_type(func->return_type);
+
         for (const auto& body_stmt : func->body) {
             compile_stmt(body_stmt.get(), bytecode);
         }
+
+        current_return_type = saved_return_type;
         pop_scope();
 
         // Guarantee a return so control never falls through into the next function.
         // If the body does not provably end in 'ret', emit an implicit default return.
         if (func->body.empty() || !ends_with_return(func->body.back().get())) {
+            if (token_to_type(func->return_type) != Type::VOID
+                && token_to_type(func->return_type) != Type::UNKNOWN) {
+                report_error(current_loc, "Function '" + func->name + "' must return a value of type "
+                    + type_to_string(token_to_type(func->return_type)));
+            }
             int idx = bytecode.add_const((int64_t)0);
             bytecode.emit(OpCode::OP_CONSTANT, idx);
             bytecode.emit(OpCode::OP_RETURN);
@@ -372,7 +385,7 @@ private:
 
     void compile_break(BreakStmt* stmt, Bytecode& bytecode) {
         if (loop_stack.empty()) {
-            throw runtime_error("'break' used outside of a loop.");
+            report_error(current_loc, "'break' used outside of a loop.");
         }
         int scopes_to_exit = (int)variable_scopes.size() - loop_stack.back().scope_depth;
         for (int i = 0; i < scopes_to_exit; i++) {
@@ -384,7 +397,7 @@ private:
 
     void compile_continue(ContinueStmt* stmt, Bytecode& bytecode) {
         if (loop_stack.empty()) {
-            throw runtime_error("'continue' used outside of a loop.");
+            report_error(current_loc, "'continue' used outside of a loop.");
         }
         int scopes_to_exit = (int)variable_scopes.size() - loop_stack.back().scope_depth;
         for (int i = 0; i < scopes_to_exit; i++) {
@@ -401,7 +414,7 @@ private:
         // Handle struct/class variable declarations
         if (var_decl->type == TokenType::IDENTIFIER) {
             if (!structs.count(var_decl->type_name)) {
-                throw runtime_error("Unknown struct '" + var_decl->type_name + "'");
+                report_error(current_loc, "Unknown struct '" + var_decl->type_name + "'");
             }
             declared_type = Type::STRUCT;
             set_custom_type(var_decl->name, var_decl->type_name);
@@ -451,7 +464,12 @@ private:
                     int idx_val = bytecode.add_const((int64_t)i);
                     bytecode.emit(OpCode::OP_CONSTANT, idx_val);
 
-                    compile_expr(arr_lit->elements[i].get(), bytecode, declared_type);
+                    Type elem_type = compile_expr(arr_lit->elements[i].get(), bytecode, declared_type);
+                    if (declared_type != Type::UNKNOWN && !is_assignable(declared_type, elem_type)) {
+                        report_error(current_loc,
+                            "Array element type mismatch: expected " + type_to_string(declared_type) +
+                            ", got " + type_to_string(elem_type));
+                    }
                     bytecode.emit(OpCode::OP_SET_INDEX);
                 }
                 handled = true;
@@ -464,17 +482,26 @@ private:
                 handled = true;
             }
             else if (var_decl->initializer) {
-                compile_expr(var_decl->initializer.get(), bytecode, Type::ARRAY);
+                Type init_type = compile_expr(var_decl->initializer.get(), bytecode, Type::ARRAY);
+                if (init_type != Type::ARRAY && init_type != Type::UNKNOWN) {
+                    report_error(current_loc, "Array initializer must be an array, got "
+                        + type_to_string(init_type));
+                }
                 int name_index = bytecode.add_const(var_decl->name);
                 bytecode.emit(OpCode::OP_DEFINE_VAR, name_index);
                 handled = true;
             }
 
             if (!handled) {
-                throw runtime_error("Array size error. Provide [N] or an initializer.");
+                report_error(current_loc, "Array size error. Provide [N] or an initializer.");
             }
         } else {
-            compile_expr(var_decl->initializer.get(), bytecode, declared_type);
+            Type init_type = compile_expr(var_decl->initializer.get(), bytecode, declared_type);
+            if (declared_type != Type::UNKNOWN && !is_assignable(declared_type, init_type)) {
+                report_error(current_loc,
+                    "Cannot initialize " + type_to_string(declared_type) +
+                    " with " + type_to_string(init_type));
+            }
             int name_index = bytecode.add_const(var_decl->name);
             bytecode.emit(OpCode::OP_DEFINE_VAR, name_index);
         }
@@ -489,10 +516,10 @@ private:
         if (auto* var = dynamic_cast<VariableExpr*>(stmt->expression.get())) {
             Type var_type = get_var_type(var->name);
             if (var_type == Type::UNKNOWN) {
-                throw runtime_error("Undefined variable in input(): " + var->name);
+                report_error(current_loc, "Undefined variable in input(): " + var->name);
             }
             if (is_constant(var->name)) {
-                throw runtime_error("Cannot read input into constant variable: " + var->name);
+                report_error(current_loc, "Cannot read input into constant variable: " + var->name);
             }
 
             bytecode.emit(OpCode::OP_INPUT, static_cast<uint8_t>(var_type));
@@ -503,8 +530,18 @@ private:
 
     void compile_return(ReturnStmt* ret_stmt, Bytecode& bytecode) {
         if (ret_stmt->value) {
-            compile_expr(ret_stmt->value.get(), bytecode, Type::UNKNOWN);
+            Type val_type = compile_expr(ret_stmt->value.get(), bytecode, current_return_type);
+            if (current_return_type != Type::UNKNOWN && current_return_type != Type::VOID
+                && !is_assignable(current_return_type, val_type)) {
+                report_error(current_loc,
+                    "Return type mismatch: expected " + type_to_string(current_return_type) +
+                    ", got " + type_to_string(val_type));
+            }
         } else {
+            if (current_return_type != Type::UNKNOWN && current_return_type != Type::VOID) {
+                report_error(current_loc, "Function must return a value of type "
+                    + type_to_string(current_return_type));
+            }
             int idx = bytecode.add_const((int64_t)0);
             bytecode.emit(OpCode::OP_CONSTANT, idx);
         }
@@ -513,6 +550,8 @@ private:
 
     // Dispatcher
     void compile_stmt(Stmt* stmt, Bytecode& bytecode) {
+        if (stmt->location.line != 0) current_loc = stmt->location;
+
         if (auto* block = dynamic_cast<BlockStmt*>(stmt)) {
             bytecode.emit(OpCode::OP_ENTER_SCOPE);
             push_scope();
@@ -552,11 +591,13 @@ private:
             return;
         }
         
-        throw runtime_error("Unknown statement type");
+        report_error(current_loc, "Unknown statement type");
     }
 
     // Expressions
     Type compile_expr(Expr* expr, Bytecode& bytecode, Type expected_type = Type::UNKNOWN) {
+        if (expr->location.line != 0) current_loc = expr->location;
+
         if (auto* i64 = dynamic_cast<Int64Literal*>(expr)) {
             if (expected_type == Type::INT32) {
                 int idx = bytecode.add_const(static_cast<int32_t>(i64->value));
@@ -623,7 +664,7 @@ private:
         }
         if (auto* lit = dynamic_cast<StructLiteral*>(expr)) {
             if (!structs.count(lit->struct_name)) {
-                throw runtime_error("Unknown struct '" + lit->struct_name + "'");
+                report_error(current_loc, "Unknown struct '" + lit->struct_name + "'");
             }
             
             int name_idx = bytecode.add_const(lit->struct_name);
@@ -644,10 +685,10 @@ private:
             if (auto* var = dynamic_cast<VariableExpr*>(assign_expr->target.get())) {
                 Type var_type = get_var_type(var->name);
                 if (var_type == Type::UNKNOWN) {
-                    throw runtime_error("Undefined variable '" + var->name + "'");
+                    report_error(current_loc, "Undefined variable '" + var->name + "'");
                 }
                 if (is_constant(var->name)) {
-                    throw runtime_error("Cannot reassign constant variable '" + var->name + "'");
+                    report_error(current_loc, "Cannot reassign constant variable '" + var->name + "'");
                 }
 
                 int var_idx = bytecode.add_const(var->name);
@@ -655,7 +696,7 @@ private:
                 if (assign_expr->op == TokenType::EQUALS) {
                     Type val_type = compile_expr(assign_expr->value.get(), bytecode, var_type);
                     if (!is_assignable(var_type, val_type)) {
-                        throw runtime_error("Cannot assign " + type_to_string(val_type) + " to " + type_to_string(var_type));
+                        report_error(current_loc, "Cannot assign " + type_to_string(val_type) + " to " + type_to_string(var_type));
                     }
                     bytecode.emit(OpCode::OP_SAVE, var_idx);
                 } else {
@@ -666,7 +707,7 @@ private:
                         case TokenType::MINUS: bytecode.emit(OpCode::OP_SUBTRACT);  break;
                         case TokenType::STAR:  bytecode.emit(OpCode::OP_MULTIPLY);  break;
                         case TokenType::SLASH: bytecode.emit(OpCode::OP_DIVIDE);    break;
-                        default: throw runtime_error("Invalid assignment operator");
+                        default: report_error(current_loc, "Invalid assignment operator");
                     }
                     bytecode.emit(OpCode::OP_SAVE, var_idx);
                 }
@@ -676,7 +717,7 @@ private:
             // Array element
             if (auto* arr = dynamic_cast<ArrayAccessExpr*>(assign_expr->target.get())) {
                 if (assign_expr->op != TokenType::EQUALS) {
-                    throw runtime_error("Compound assignment on array elements is not supported");
+                    report_error(current_loc, "Compound assignment on array elements is not supported");
                 }
                 compile_expr(arr->array.get(), bytecode, Type::UNKNOWN);
                 compile_expr(arr->index.get(), bytecode, Type::INT64);
@@ -688,7 +729,7 @@ private:
             // Struct/Class member
             if (auto* field = dynamic_cast<FieldAccessExpr*>(assign_expr->target.get())) {
                 if (assign_expr->op != TokenType::EQUALS) {
-                    throw runtime_error("Compound assignment on struct fields is not supported");
+                    report_error(current_loc, "Compound assignment on struct fields is not supported");
                 }
                 compile_expr(field->object.get(), bytecode, Type::UNKNOWN);
                 compile_expr(assign_expr->value.get(), bytecode, Type::UNKNOWN);
@@ -697,7 +738,7 @@ private:
                 return Type::UNKNOWN;
             }
 
-            throw runtime_error("Invalid assignment target");
+            report_error(current_loc, "Invalid assignment target");
         }
 
         if (auto* arr_access = dynamic_cast<ArrayAccessExpr*>(expr)) {
@@ -713,15 +754,15 @@ private:
                 compile_expr(arg.get(), bytecode, Type::UNKNOWN);
             }
             if (method_call->method == "push") {
-                if (method_call->arguments.size() != 1) throw runtime_error("push expects 1 argument");
+                if (method_call->arguments.size() != 1) report_error(current_loc, "push expects 1 argument");
                 bytecode.emit(OpCode::OP_ARRAY_PUSH);
             } 
             else if (method_call->method == "pop") {
-                if (!method_call->arguments.empty()) throw runtime_error("pop expects 0 arguments");
+                if (!method_call->arguments.empty()) report_error(current_loc, "pop expects 0 arguments");
                 bytecode.emit(OpCode::OP_ARRAY_POP);
             } 
             else {
-                throw runtime_error("Unknown array method: " + method_call->method);
+                report_error(current_loc, "Unknown array method: " + method_call->method);
             }
             return Type::UNKNOWN;
         }
@@ -733,7 +774,7 @@ private:
                 int argc = static_cast<int>(call->arguments.size());
 
                 if (argc < sym.min_arity || argc > sym.max_arity)
-                    throw runtime_error(sym.name + ": expected " +
+                    report_error(current_loc, sym.name + ": expected " +
                         (sym.min_arity == sym.max_arity
                             ? std::to_string(sym.min_arity)
                             : std::to_string(sym.min_arity) + ".." + std::to_string(sym.max_arity)) +
@@ -752,7 +793,7 @@ private:
             if (functions.count(call->name)) func = functions[call->name];
 
             if (func && func->params.size() != call->arguments.size()) {
-                throw runtime_error("Function '" + call->name + "' expects " +
+                report_error(current_loc, "Function '" + call->name + "' expects " +
                     std::to_string(func->params.size()) + " args, got " +
                     std::to_string(call->arguments.size()));
             }
@@ -764,11 +805,19 @@ private:
 
                 if (is_ref) {
                     auto* v = dynamic_cast<VariableExpr*>(arg.get());
-                    if (!v) throw runtime_error("Ref argument must be a variable");
+                    if (!v) report_error(current_loc, "Ref argument must be a variable");
                     int name_idx = bytecode.add_const(v->name);
                     bytecode.emit(OpCode::OP_LOAD_REF, name_idx);
                 } else {
-                    compile_expr(arg.get(), bytecode, Type::UNKNOWN);
+                    Type arg_type = compile_expr(arg.get(), bytecode, Type::UNKNOWN);
+                    if (func) {
+                        Type param_type = token_to_type(func->params[idx].type);
+                        if (param_type != Type::UNKNOWN && !is_assignable(param_type, arg_type)) {
+                            report_error(current_loc, "Argument " + std::to_string(idx + 1) +
+                                " of '" + call->name + "': expected " + type_to_string(param_type) +
+                                ", got " + type_to_string(arg_type));
+                        }
+                    }
                 }
             }
 
@@ -831,7 +880,7 @@ private:
                 } else if (is_numeric(left_type) && is_numeric(right_type)) {
                     result_type = promote_numeric(left_type, right_type);
                 } else {
-                    throw runtime_error("Cannot add " + type_to_string(left_type) + " and " + type_to_string(right_type));
+                    report_error(current_loc, "Cannot add " + type_to_string(left_type) + " and " + type_to_string(right_type));
                 }
             }
             else if (bin->op == TokenType::EQUALS_EQUALS || bin->op == TokenType::NOT_EQUALS) {
@@ -840,21 +889,21 @@ private:
                     (left_type == Type::STR || left_type == Type::CHAR || left_type == Type::BOOL);
 
                 if (!is_valid_number && !is_same_primitive) {
-                    throw runtime_error("Cannot compare " + type_to_string(left_type) + " and " + type_to_string(right_type));
+                    report_error(current_loc, "Cannot compare " + type_to_string(left_type) + " and " + type_to_string(right_type));
                 }
                 result_type = Type::BOOL;
             }
             else if (bin->op == TokenType::LESS_THAN || bin->op == TokenType::LESS_EQUAL ||
                     bin->op == TokenType::GREATER_THAN || bin->op == TokenType::GREATER_EQUAL) {
                 if (!is_numeric(left_type) || !is_numeric(right_type)) {
-                    throw runtime_error("Relational comparisons require numbers, got " + type_to_string(left_type) + " and " + type_to_string(right_type));
+                    report_error(current_loc, "Relational comparisons require numbers, got " + type_to_string(left_type) + " and " + type_to_string(right_type));
                 }
                 result_type = Type::BOOL;
             }
             else {
                 // -, *, /
                 if (!is_numeric(left_type) || !is_numeric(right_type)) {
-                    throw runtime_error("Math operations require numbers, got " + type_to_string(left_type) + " and " + type_to_string(right_type));
+                    report_error(current_loc, "Math operations require numbers, got " + type_to_string(left_type) + " and " + type_to_string(right_type));
                 }
                 result_type = promote_numeric(left_type, right_type);
             }
@@ -874,11 +923,11 @@ private:
                     bytecode.emit(OpCode::OP_NOT); 
                     break;
 
-                default: throw runtime_error("Unknown binary operator");
+                default: report_error(current_loc, "Unknown binary operator");
             }
             return result_type;
         }
-        throw runtime_error("Unknown expression type");
+        report_error(current_loc, "Unknown expression type");
     }
 
 public:
@@ -935,7 +984,7 @@ public:
 
         // Patch jump to main
         if (functions.find("main") == functions.end()) {
-            throw runtime_error("No 'main' function found.");
+            report_error(current_loc, "No 'main' function found.");
         }
         uint16_t main_addr = (uint16_t)bytecode.code.size();
         bytecode.function_addresses["main"] = main_addr;
