@@ -16,6 +16,7 @@
 #include "parser.hpp"
 #include "bytecode.hpp"
 #include "token.hpp"
+#include "metadata.hpp"
 
 using std::runtime_error;
 using std::vector;
@@ -951,6 +952,7 @@ public:
         src_file = fs::weakly_canonical(entry_file);
         exec_dir = executable_dir.empty() ? fs::path{} : fs::weakly_canonical(executable_dir);
 
+        load_metadata(src_file, bytecode.metadata);
         push_scope();
 
         // Register functions, modules and structs

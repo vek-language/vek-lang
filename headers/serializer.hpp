@@ -6,6 +6,7 @@
 #include <array>
 #include <variant>
 #include <stdexcept>
+#include <vector>
 #include "bytecode.hpp"
 #include "../configs/config.hpp"
 
@@ -29,6 +30,20 @@ using std::holds_alternative;
     [N bytes] Constants (tag + data)
     [4 bytes] Function count (uint32)
     [N bytes] Functions (name length + name + address)
+
+    [4N + 16 bytes] Metadata {
+        [4 bytes] Metadata name length (uint32)
+        [N bytes] Metadata name
+        [4 bytes] Metadata version length (uint32)
+        [N bytes] Metadata version
+        [4 bytes] Metadata author length (uint32)
+        [N bytes] Metadata author
+        [4 bytes] Metadata description length (uint32)
+        [N bytes] Metadata description
+    }
+    
+    [4 bytes] Icon data size (uint32)
+    [N bytes] Icon data
 */
 
 class Serializer {
@@ -163,6 +178,12 @@ public:
             write_string(file, name);
             write_u32(file, static_cast<uint32_t>(addr));
         }
+
+        // Metadata
+        write_string(file, bytecode.metadata.name);
+        write_string(file, bytecode.metadata.version);
+        write_string(file, bytecode.metadata.author);
+        write_string(file, bytecode.metadata.description);
     }
 
     static Bytecode load(const string& path) {
@@ -234,6 +255,11 @@ public:
             bytecode.function_addresses[name] = address;
         }
 
+        // Metadata
+        bytecode.metadata.name        = read_string(file);
+        bytecode.metadata.version     = read_string(file);
+        bytecode.metadata.author      = read_string(file);
+        bytecode.metadata.description = read_string(file);
         return bytecode;
     }
 };

@@ -14,8 +14,8 @@ target_include_directories(vek_core PUBLIC headers)
 target_compile_features(vek_core PUBLIC cxx_std_20)
 
 if(WIN32)
-    set(VKC_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/vkc.rc")
-    set(VEK_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/vek.rc")
+    set(VKC_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/filedata/vkc.rc")
+    set(VEK_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/filedata/vek.rc")
 endif()
 
 # VEK DK

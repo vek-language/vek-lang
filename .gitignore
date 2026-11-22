@@ -3,9 +3,14 @@
 *.vkc
 *.vek
 
-# Don't ignore .vek files in libs
+# Don't ignore
 !libs/
 !libs/**/*.vek
+
+!assets/
+!assets/template/
+!assets/template/project/
+!assets/template/project/**
 
 # IDE
 .idea/

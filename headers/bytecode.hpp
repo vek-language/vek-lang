@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <variant>
 #include <unordered_map>
+
+#include "./metadata.hpp"
 #include "./token.hpp"
 
 using std::variant;
@@ -119,6 +121,8 @@ enum class OpCode {
 };
 
 struct Bytecode {
+    Metadata metadata;
+
     vector<uint8_t> code;
     vector<Value> constants;
     unordered_map<string, size_t> function_addresses;
