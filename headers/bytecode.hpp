@@ -118,40 +118,63 @@ enum class OpCode {
     OP_HALT = 0xFF,
 };
 
-struct Bytecode
-{
+struct Bytecode {
     vector<uint8_t> code;
     vector<Value> constants;
     unordered_map<string, size_t> function_addresses;
 
-    vector<NativeSymbol>                 natives;
+    vector<NativeSymbol> natives;
     unordered_map<string, uint16_t> native_index;
 
+    // Byte-writers
+    void write(uint8_t byte) {
+        code.push_back(byte);
+    }
+
+    void emit_u16(uint16_t val) {
+        write((val >> 8) & 0xFF);
+        write(val & 0xFF);
+    }
+
+    // Instruction emitters
+    template <typename... Args>
+    void emit(OpCode op, Args... args) {
+        write(static_cast<uint8_t>(op));
+        (write(static_cast<uint8_t>(args)), ...);
+    }
+
+    void emit_const_op(OpCode op, uint16_t const_idx) {
+        write(static_cast<uint8_t>(op));
+        emit_u16(const_idx);
+    }
+
+    // Constant pool
+    uint16_t add_const(const Value& val) {
+        for (size_t i = 0; i < constants.size(); ++i) {
+            if (constants[i] == val) {
+                return static_cast<uint16_t>(i);
+            }
+        }
+        if (constants.size() >= 65535) {
+            throw std::runtime_error("Too many constants (>= 65535)");
+        }
+        constants.push_back(val);
+        return static_cast<uint16_t>(constants.size() - 1);
+    }
+
+    // Native
     uint16_t register_native(std::string name, NativeFunc func,
         int min_arity, int max_arity, Type ret_type) {
-        if (auto it = native_index.find(name); it != native_index.end())
+        if (auto it = native_index.find(name); it != native_index.end()) {
             return it->second;
-        if (natives.size() >= 65535)
-            throw std::runtime_error("Too many natives (>=65535)");
+        }
+        if (natives.size() >= 65535) {
+            throw std::runtime_error("Too many natives (>= 65535)");
+        }
         uint16_t id = static_cast<uint16_t>(natives.size());
         natives.push_back({std::move(name), std::move(func),
                            min_arity, max_arity, ret_type});
         native_index[natives.back().name] = id;
         return id;
-    }
-
-    void write(uint8_t byte) {
-        code.push_back(byte);
-    }
-
-    int add_const(Value val) {
-        constants.push_back(val);
-        return constants.size() - 1;
-    }
-
-    template <typename... Args> // Function overloading would look a little bit weird there
-    void emit(OpCode op, Args... args) {
-        write(static_cast<uint8_t>(op));
-        (write(static_cast<uint8_t>(args)), ...); // Fold expression (c++17)
     }
 };

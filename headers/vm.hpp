@@ -122,6 +122,13 @@ private:
         return mv;
     }
 
+    // Read a 16-bit constant index operand from bytecode, advancing ip by 2
+    static uint16_t read_u16(const Bytecode& bytecode, size_t& ip) {
+        uint16_t v = (uint16_t(bytecode.code[ip]) << 8) | uint16_t(bytecode.code[ip + 1]);
+        ip += 2;
+        return v;
+    }
+
 public:
     void run(const Bytecode& bytecode) {
         size_t ip = 0;
@@ -133,7 +140,7 @@ public:
             switch(instruction) {
                 // Push
                 case OpCode::OP_CONSTANT: {
-                    uint8_t constant_index = bytecode.code[ip++];
+                    uint16_t constant_index = read_u16(bytecode, ip);
                     push(bytecode.constants[constant_index]);
                     break;
                 }
@@ -245,7 +252,7 @@ public:
 
                 // Variables
                 case OpCode::OP_DEFINE_VAR: {
-                    uint8_t name_index = bytecode.code[ip++];
+                    uint16_t name_index = read_u16(bytecode, ip);
                     string var_name = get<string>(bytecode.constants[name_index]);
                     auto cell = make_shared<Cell>();
                     cell->value = pop();
@@ -253,7 +260,7 @@ public:
                     break;
                 }
                 case OpCode::OP_SAVE: {
-                    uint8_t name_index = bytecode.code[ip++];
+                    uint16_t name_index = read_u16(bytecode, ip);
                     string var_name = get<string>(bytecode.constants[name_index]);
                     Value val = pop();
                     bool found = false;
@@ -271,7 +278,7 @@ public:
                     break;
                 }
                 case OpCode::OP_LOAD: {
-                    uint8_t name_index = bytecode.code[ip++];
+                    uint16_t name_index = read_u16(bytecode, ip);
                     string var_name = get<string>(bytecode.constants[name_index]);
                     int i = (int)scopes.size() - 1;
                     for (; i >= 0; i--) {
@@ -288,7 +295,7 @@ public:
                 }
 
                 case OpCode::OP_LOAD_REF: {
-                    uint8_t name_index = bytecode.code[ip++];
+                    uint16_t name_index = read_u16(bytecode, ip);
                     string var_name = get<string>(bytecode.constants[name_index]);
                     int i = (int)scopes.size() - 1;
                     for (; i >= 0; i--) {
@@ -303,7 +310,7 @@ public:
                 }
 
                 case OpCode::OP_DEFINE_REF_VAR: {
-                    uint8_t name_index = bytecode.code[ip++];
+                    uint16_t name_index = read_u16(bytecode, ip);
                     string var_name = get<string>(bytecode.constants[name_index]);
                     Value v = pop();
                     if (!holds_alternative<shared_ptr<Cell>>(v))
@@ -438,7 +445,7 @@ public:
 
                 // Functions
                 case OpCode::OP_CALL: {
-                    uint8_t name_index = bytecode.code[ip++];
+                    uint16_t name_index = read_u16(bytecode, ip);
                     uint8_t arg_count = bytecode.code[ip++];
                     string func_name = get<string>(bytecode.constants[name_index]);
                     call_stack.push_back(ip);
@@ -488,7 +495,7 @@ public:
 
                 // OOP
                 case OpCode::OP_NEW_STRUCT: {
-                    uint8_t name_idx = bytecode.code[ip++];
+                    uint16_t name_idx = read_u16(bytecode, ip);
                     uint8_t count = bytecode.code[ip++];
                     
                     string struct_name = get<string>(bytecode.constants[name_idx]);
@@ -506,7 +513,7 @@ public:
                 }
 
                 case OpCode::OP_GET_MEMBER: {
-                    uint8_t field_idx = bytecode.code[ip++];
+                    uint16_t field_idx = read_u16(bytecode, ip);
                     string field_name = get<string>(bytecode.constants[field_idx]);
                     
                     Value obj = pop();
@@ -520,7 +527,7 @@ public:
                 }
 
                 case OpCode::OP_SET_MEMBER: {
-                    uint8_t field_idx = bytecode.code[ip++];
+                    uint16_t field_idx = read_u16(bytecode, ip);
                     string field_name = get<string>(bytecode.constants[field_idx]);
                     
                     Value val = pop();
@@ -581,7 +588,7 @@ public:
                             " args, got " + std::to_string(argc));
 
                     std::vector<Value> args(argc);
-                    for (int i = argc - 1; i >= 0; --i) args[i] = pop();
+                    for (int i = argc - 1; i >= 0; i--) args[i] = pop();
                     
                     Value result = sym.func(std::move(args));
                     push(std::move(result));

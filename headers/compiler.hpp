@@ -152,6 +152,19 @@ private:
         bytecode.code[jump_index + 1] = target & 0xFF;
     }
 
+    // Emit: [opcode][u16 constant index]
+    void emit_const_idx(Bytecode& bytecode, OpCode op, uint16_t idx) {
+        bytecode.write(static_cast<uint8_t>(op));
+        bytecode.emit_u16(idx);
+    }
+
+    // Emit: [opcode][u16 constant index][u8 extra]
+    void emit_const_idx_u8(Bytecode& bytecode, OpCode op, uint16_t idx, uint8_t extra) {
+        bytecode.write(static_cast<uint8_t>(op));
+        bytecode.emit_u16(idx);
+        bytecode.write(extra);
+    }
+
     // Module loading
     fs::path resolve_load_path(LoadStmt* stmt, const fs::path& current_file) {
         fs::path resolved;
@@ -253,8 +266,8 @@ private:
         
         push_scope();
         for (const auto& param : func->params) {
-            int name_idx = bytecode.add_const(param.name);
-            bytecode.emit(param.is_ref ? OpCode::OP_DEFINE_REF_VAR : OpCode::OP_DEFINE_VAR, name_idx);
+            uint16_t name_idx = bytecode.add_const(param.name);
+            emit_const_idx(bytecode, param.is_ref ? OpCode::OP_DEFINE_REF_VAR : OpCode::OP_DEFINE_VAR, name_idx);
             set_var_type(param.name, token_to_type(param.type));
         }
         
@@ -276,8 +289,8 @@ private:
                 report_error(current_loc, "Function '" + func->name + "' must return a value of type "
                     + type_to_string(token_to_type(func->return_type)));
             }
-            int idx = bytecode.add_const((int64_t)0);
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const((int64_t)0);
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
             bytecode.emit(OpCode::OP_RETURN);
         }
     }
@@ -442,12 +455,12 @@ private:
             
             if (auto* arr_lit = dynamic_cast<ArrayLiteral*>(var_decl->initializer.get())) {
                 int64_t size = arr_lit->elements.size();
-                int idx = bytecode.add_const(size);
-                bytecode.emit(OpCode::OP_CONSTANT, idx);
+                uint16_t idx = bytecode.add_const(size);
+                emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
                 
                 bytecode.emit(OpCode::OP_NEW_ARRAY);
-                int name_index = bytecode.add_const(var_decl->name);
-                bytecode.emit(OpCode::OP_DEFINE_VAR, name_index);
+                uint16_t name_index = bytecode.add_const(var_decl->name);
+                emit_const_idx(bytecode, OpCode::OP_DEFINE_VAR, name_index);
 
                 for (size_t i = 0; i < arr_lit->elements.size(); ++i) {
                     if (var_decl->type == TokenType::IDENTIFIER) {
@@ -458,11 +471,11 @@ private:
                         }
                     }
 
-                    int var_idx = bytecode.add_const(var_decl->name);
-                    bytecode.emit(OpCode::OP_LOAD, var_idx);
+                    uint16_t var_idx = bytecode.add_const(var_decl->name);
+                    emit_const_idx(bytecode, OpCode::OP_LOAD, var_idx);
 
-                    int idx_val = bytecode.add_const((int64_t)i);
-                    bytecode.emit(OpCode::OP_CONSTANT, idx_val);
+                    uint16_t idx_val = bytecode.add_const((int64_t)i);
+                    emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx_val);
 
                     Type elem_type = compile_expr(arr_lit->elements[i].get(), bytecode, declared_type);
                     if (declared_type != Type::UNKNOWN && !is_assignable(declared_type, elem_type)) {
@@ -477,8 +490,8 @@ private:
             else if (var_decl->array_size) {
                 compile_expr(var_decl->array_size.get(), bytecode, Type::INT64);
                 bytecode.emit(OpCode::OP_NEW_ARRAY);
-                int name_index = bytecode.add_const(var_decl->name);
-                bytecode.emit(OpCode::OP_DEFINE_VAR, name_index);
+                uint16_t name_index = bytecode.add_const(var_decl->name);
+                emit_const_idx(bytecode, OpCode::OP_DEFINE_VAR, name_index);
                 handled = true;
             }
             else if (var_decl->initializer) {
@@ -487,8 +500,8 @@ private:
                     report_error(current_loc, "Array initializer must be an array, got "
                         + type_to_string(init_type));
                 }
-                int name_index = bytecode.add_const(var_decl->name);
-                bytecode.emit(OpCode::OP_DEFINE_VAR, name_index);
+                uint16_t name_index = bytecode.add_const(var_decl->name);
+                emit_const_idx(bytecode, OpCode::OP_DEFINE_VAR, name_index);
                 handled = true;
             }
 
@@ -502,8 +515,8 @@ private:
                     "Cannot initialize " + type_to_string(declared_type) +
                     " with " + type_to_string(init_type));
             }
-            int name_index = bytecode.add_const(var_decl->name);
-            bytecode.emit(OpCode::OP_DEFINE_VAR, name_index);
+            uint16_t name_index = bytecode.add_const(var_decl->name);
+            emit_const_idx(bytecode, OpCode::OP_DEFINE_VAR, name_index);
         }
     }
 
@@ -523,8 +536,8 @@ private:
             }
 
             bytecode.emit(OpCode::OP_INPUT, static_cast<uint8_t>(var_type));
-            int name_idx = bytecode.add_const(var->name);
-            bytecode.emit(OpCode::OP_SAVE, name_idx);
+            uint16_t name_idx = bytecode.add_const(var->name);
+            emit_const_idx(bytecode, OpCode::OP_SAVE, name_idx);
         }
     }
 
@@ -542,8 +555,8 @@ private:
                 report_error(current_loc, "Function must return a value of type "
                     + type_to_string(current_return_type));
             }
-            int idx = bytecode.add_const((int64_t)0);
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const((int64_t)0);
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
         }
         bytecode.emit(OpCode::OP_RETURN);
     }
@@ -600,38 +613,38 @@ private:
 
         if (auto* i64 = dynamic_cast<Int64Literal*>(expr)) {
             if (expected_type == Type::INT32) {
-                int idx = bytecode.add_const(static_cast<int32_t>(i64->value));
-                bytecode.emit(OpCode::OP_CONSTANT, idx);
+                uint16_t idx = bytecode.add_const(static_cast<int32_t>(i64->value));
+                emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
                 return Type::INT32;
             }
 
-            int idx = bytecode.add_const(static_cast<int64_t>(i64->value));
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const(static_cast<int64_t>(i64->value));
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
             return Type::INT64;
         }
         if (auto* f64 = dynamic_cast<Float64Literal*>(expr)) {
-            int idx = bytecode.add_const(static_cast<double>(f64->value));
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const(static_cast<double>(f64->value));
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
             return Type::FLOAT64;
         }
         if (auto* f32 = dynamic_cast<Float32Literal*>(expr)) {
-            int idx = bytecode.add_const(static_cast<float>(f32->value));
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const(static_cast<float>(f32->value));
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
             return Type::FLOAT32;
         }
         if (auto* b = dynamic_cast<BoolLiteral*>(expr)) {
-            int idx = bytecode.add_const(b->value);
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const(b->value);
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
             return Type::BOOL;
         }
         if (auto* s = dynamic_cast<StringLiteral*>(expr)) {
-            int idx = bytecode.add_const(s->value);
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const(s->value);
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
             return Type::STR;
         }
         if (auto* c = dynamic_cast<CharLiteral*>(expr)) {
-            int idx = bytecode.add_const(c->value);
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const(c->value);
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
             return Type::CHAR;
         }
         
@@ -645,21 +658,21 @@ private:
                 if (!custom.empty()) result = custom;
             }
 
-            int idx = bytecode.add_const(result);
-            bytecode.emit(OpCode::OP_CONSTANT, idx);
+            uint16_t idx = bytecode.add_const(result);
+            emit_const_idx(bytecode, OpCode::OP_CONSTANT, idx);
             return Type::STR;
         }
 
         if (auto* var = dynamic_cast<VariableExpr*>(expr)) {
-            int idx = bytecode.add_const(var->name);
-            bytecode.emit(OpCode::OP_LOAD, idx);
+            uint16_t idx = bytecode.add_const(var->name);
+            emit_const_idx(bytecode, OpCode::OP_LOAD, idx);
             return get_var_type(var->name);
         }
 
         if (auto* field = dynamic_cast<FieldAccessExpr*>(expr)) {
             compile_expr(field->object.get(), bytecode, Type::UNKNOWN);
-            int field_idx = bytecode.add_const(field->field);
-            bytecode.emit(OpCode::OP_GET_MEMBER, field_idx);
+            uint16_t field_idx = bytecode.add_const(field->field);
+            emit_const_idx(bytecode, OpCode::OP_GET_MEMBER, field_idx);
             return Type::UNKNOWN;
         }
         if (auto* lit = dynamic_cast<StructLiteral*>(expr)) {
@@ -667,16 +680,16 @@ private:
                 report_error(current_loc, "Unknown struct '" + lit->struct_name + "'");
             }
             
-            int name_idx = bytecode.add_const(lit->struct_name);
+            uint16_t name_idx = bytecode.add_const(lit->struct_name);
             uint8_t field_count = static_cast<uint8_t>(lit->initializers.size());
 
             for (const auto& [field_name, field_expr] : lit->initializers) {
-                int field_idx = bytecode.add_const(field_name);
-                bytecode.emit(OpCode::OP_CONSTANT, field_idx);
+                uint16_t field_idx = bytecode.add_const(field_name);
+                emit_const_idx(bytecode, OpCode::OP_CONSTANT, field_idx);
                 compile_expr(field_expr.get(), bytecode, Type::UNKNOWN);
             }
 
-            bytecode.emit(OpCode::OP_NEW_STRUCT, name_idx, field_count);
+            emit_const_idx_u8(bytecode, OpCode::OP_NEW_STRUCT, name_idx, field_count);
             return TypeInfo(Type::STRUCT, lit->struct_name);
         }
 
@@ -691,16 +704,16 @@ private:
                     report_error(current_loc, "Cannot reassign constant variable '" + var->name + "'");
                 }
 
-                int var_idx = bytecode.add_const(var->name);
+                uint16_t var_idx = bytecode.add_const(var->name);
 
                 if (assign_expr->op == TokenType::EQUALS) {
                     Type val_type = compile_expr(assign_expr->value.get(), bytecode, var_type);
                     if (!is_assignable(var_type, val_type)) {
                         report_error(current_loc, "Cannot assign " + type_to_string(val_type) + " to " + type_to_string(var_type));
                     }
-                    bytecode.emit(OpCode::OP_SAVE, var_idx);
+                    emit_const_idx(bytecode, OpCode::OP_SAVE, var_idx);
                 } else {
-                    bytecode.emit(OpCode::OP_LOAD, var_idx);
+                    emit_const_idx(bytecode, OpCode::OP_LOAD, var_idx);
                     compile_expr(assign_expr->value.get(), bytecode, var_type);
                     switch (assign_expr->op) {
                         case TokenType::PLUS:  bytecode.emit(OpCode::OP_ADD);       break;
@@ -709,7 +722,7 @@ private:
                         case TokenType::SLASH: bytecode.emit(OpCode::OP_DIVIDE);    break;
                         default: report_error(current_loc, "Invalid assignment operator");
                     }
-                    bytecode.emit(OpCode::OP_SAVE, var_idx);
+                    emit_const_idx(bytecode, OpCode::OP_SAVE, var_idx);
                 }
                 return Type::UNKNOWN;
             }
@@ -733,8 +746,8 @@ private:
                 }
                 compile_expr(field->object.get(), bytecode, Type::UNKNOWN);
                 compile_expr(assign_expr->value.get(), bytecode, Type::UNKNOWN);
-                int field_idx = bytecode.add_const(field->field);
-                bytecode.emit(OpCode::OP_SET_MEMBER, field_idx);
+                uint16_t field_idx = bytecode.add_const(field->field);
+                emit_const_idx(bytecode, OpCode::OP_SET_MEMBER, field_idx);
                 return Type::UNKNOWN;
             }
 
@@ -806,8 +819,8 @@ private:
                 if (is_ref) {
                     auto* v = dynamic_cast<VariableExpr*>(arg.get());
                     if (!v) report_error(current_loc, "Ref argument must be a variable");
-                    int name_idx = bytecode.add_const(v->name);
-                    bytecode.emit(OpCode::OP_LOAD_REF, name_idx);
+                    uint16_t name_idx = bytecode.add_const(v->name);
+                    emit_const_idx(bytecode, OpCode::OP_LOAD_REF, name_idx);
                 } else {
                     Type arg_type = compile_expr(arg.get(), bytecode, Type::UNKNOWN);
                     if (func) {
@@ -821,8 +834,8 @@ private:
                 }
             }
 
-            int name_idx = bytecode.add_const(call->name);
-            bytecode.emit(OpCode::OP_CALL, name_idx, call->arguments.size());
+            uint16_t name_idx = bytecode.add_const(call->name);
+            emit_const_idx_u8(bytecode, OpCode::OP_CALL, name_idx, static_cast<uint8_t>(call->arguments.size()));
             return function_return_types.count(call->name)
                 ? function_return_types[call->name] : Type::UNKNOWN;
         }
@@ -840,7 +853,6 @@ private:
             bytecode.emit(OpCode::OP_CAST, static_cast<uint8_t>(cast->target_type));
             return token_to_type(cast->target_type);
         }
-
 
         if (auto* bin = dynamic_cast<BinaryExpr*>(expr)) {
             // Short-circuit logical operators
