@@ -9,9 +9,17 @@
 **Vek** is a fast, statically-typed, bytecode-compiled programming language with its own custom stack-based Virtual Machine (similar to Java and the JVM). 
 It is designed to be simple, bridging the syntax of C++ and Java with some of the flexibility seen in JavaScript.
 
-Compile using :
+## Prerequisites
+* A C++ compiler supporting C++20 (GCC, Clang, or MSVC)
+* CMake 3.16 or newer
+
+## Cross-Platform Build (Windows, Linux, macOS):
 ```bash
-g++ vek.cpp -o vek; g++ vekvm.cpp -o vekvm
+# 1. Configure the project
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+# 2. Build the compiler (vek) and VM (vekvm)
+cmake --build build --config Release
 ```
 
 [![Download VekLang](https://img.shields.io/badge/Download-v0.0.1-green?style=for-the-badge&logo=windows)](https://github.com/vek-language/vek-lang/releases/latest)  
@@ -27,9 +35,10 @@ You can see the docs [here](https://github.com/vek-language/vek-lang/tree/mavin/
 - [x] Dynamic Arrays (`push`, `pop`, indexing)
 - [x] `while` and `for` loops
 - [x] `&&` and `||`
-- [ ] Structs / Classes
-- [ ] String manipulation methods (`.length()`, `.split()`)
-  
+- [x] Structs
+- [x] String manipulation functions 
+- [ ] Classes
+
 **Code that shows capabilities (run with `./main {filename}.vek`)**
 ```cpp
 load math; // loads std lib "math" (use quotes for user module)
