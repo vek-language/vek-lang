@@ -5,6 +5,10 @@
 #include "./headers/vm.hpp"
 #include "./headers/serializer.hpp"
 
+// Native functions
+#include "./natives/random.hpp"
+#include "./natives/string.hpp"
+
 #include "./configs/config.hpp"
 
 using std::string;
@@ -13,6 +17,11 @@ using std::cerr;
 using std::cout;
 using std::cin;
 using std::endl;
+
+inline void register_all_natives(Bytecode& bc) {
+    register_random_natives(bc);
+    register_string_natives(bc);
+}
 
 static void print_usage(std::ostream& os) {
     os << "====================================================\n"
@@ -32,7 +41,8 @@ int main(int argc, char* argv[]) {
     }
     
     Bytecode bytecode = Serializer::load(arg);
-    
+    register_all_natives(bytecode);    
+
     VM vm;
     vm.run(bytecode);
     return 0;

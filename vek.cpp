@@ -16,6 +16,7 @@
 
 // Native functions
 #include "./natives/random.hpp"
+#include "./natives/string.hpp"
 
 #include "./configs/config.hpp"
 
@@ -32,6 +33,11 @@ using std::vector;
 
 using std::ifstream;
 using std::stringstream;
+
+inline void register_all_natives(Bytecode& bc) {
+    register_random_natives(bc);
+    register_string_natives(bc);
+}
 
 string read_file(const string& path) {
     ifstream file(path);
@@ -94,8 +100,7 @@ int main(int argc, char* argv[]) {
         Compiler compiler;
         Bytecode bytecode;
 
-        // Register natives
-        register_random_natives(bytecode);
+        register_all_natives(bytecode);
 
         auto exec_dir = fs::weakly_canonical(fs::path(argv[0])).parent_path();
         compiler.compile(ast, bytecode, path, exec_dir);
