@@ -98,7 +98,7 @@ static int parse_args(int argc, char* argv[], Options& opts) {
     }
 
     if (argc < 3) {
-        cerr << "error: '" << opts.command << "' requires a <file.ext> argument\n";
+        cerr << "[Error] '" << opts.command << "' requires a <file.ext> argument\n";
         print_usage(cerr);
         return -1;
     }
@@ -108,13 +108,17 @@ static int parse_args(int argc, char* argv[], Options& opts) {
     for (int i = 3; i < argc; ++i) {
         string arg = argv[i];
         if (arg == "-o" || arg == "--out") {
+            if (opts.command != "build") {
+                cerr << "[Error] " << arg << " is only valid for 'build'\n";
+                return -1;
+            }
             if (i + 1 >= argc) {
-                cerr << "error: " << arg << " requires a path\n";
+                cerr << "[Error] " << arg << " requires a path\n";
                 return -1;
             }
             opts.out = argv[++i];
         } else {
-            cerr << "error: unknown argument: " << arg << "\n";
+            cerr << "[Error] unknown argument: " << arg << "\n";
             return -1;
         }
     }
@@ -148,7 +152,7 @@ int main(int argc, char* argv[]) {
     
     if (opts.command == "info") {
         if (!opts.out.empty()) {
-            cerr << "error: -o is not valid for 'info'\n";
+            cerr << "[Error] -o is not valid for 'info'\n";
             return 1;
         }
         try {
