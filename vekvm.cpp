@@ -26,6 +26,7 @@ inline void register_all_natives(Bytecode& bc) {
 static void print_usage(std::ostream& os) {
     os << "====================================================\n"
           "Usage:\n"
+          "  vekvm version      - Print virtual machine version\n"
           "  vekvm <file.vkc>   - Run the bytecode file\n"
           "====================================================\n";
 }
