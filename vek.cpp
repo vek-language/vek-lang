@@ -15,7 +15,7 @@
 #include "./headers/serializer.hpp"
 
 // Native functions
-//#include "./natives/natives_name.hpp"
+#include "./natives/random.hpp"
 
 #include "./configs/config.hpp"
 
@@ -94,7 +94,9 @@ int main(int argc, char* argv[]) {
         Compiler compiler;
         Bytecode bytecode;
 
-        // register_name_natives(bytecode);
+        // Register natives
+        register_random_natives(bytecode);
+
         auto exec_dir = fs::weakly_canonical(fs::path(argv[0])).parent_path();
         compiler.compile(ast, bytecode, path, exec_dir);
 

@@ -14,7 +14,7 @@ namespace vek::config {
     inline constexpr array<char, 4> MAGIC = {'V', 'E', 'K', 'L'};
     
     // Language & Compiler
-    inline constexpr string_view VERSION = "0.0.1";
+    inline constexpr string_view VERSION = "0.0.2";
 
     // Virtual Machine
     inline constexpr string_view VM_VERSION = "0.0.1";
