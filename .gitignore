@@ -1,6 +1,11 @@
 # Basic
 *.exe
 *.vkc
+*.vek
+
+# Don't ignore .vek files in libs
+!libs/
+!libs/**/*.vek
 
 # IDE
 .idea/
