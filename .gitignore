@@ -18,7 +18,7 @@ cmake-build-*/
 
 !assets/
 !assets/template/
-!assets/template/project/
-!assets/template/project/**
-!assets/template/project/build/
-!assets/template/project/build/**
+!assets/template/
+!assets/template/**
+!assets/template/build/
+!assets/template/build/**
