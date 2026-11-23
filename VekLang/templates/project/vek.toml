@@ -1,8 +1,5 @@
 [project]
-name        = "Project"
+name        = "{{PROJECT_NAME}}"
 version     = "0.0.1"
-author      = "Daniel"
+author      = "Unknown"
 description = "A custom VEK project!"
-
-[dependencies]
-package     = "vek-language/vek-package@v0.1.0"

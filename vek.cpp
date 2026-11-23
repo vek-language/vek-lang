@@ -63,9 +63,11 @@ static void print_usage(std::ostream& os) {
 }
 
 struct Options {
-    string  command;
+    string command;
     string input;
 
+    // Optional
+    string template_type;
     fs::path out; // -o, empty if not given
 };
 
@@ -153,6 +155,57 @@ int main(int argc, char* argv[]) {
     if (parsed < 0)  return 1;
 
     if (opts.command == "create") {
+        if (opts.input.empty()) {
+            throw runtime_error("Missing project name. Usage: vek create <name> [project|package]");
+        }
+
+        string type = opts.template_type.empty() ? "project" : opts.template_type;
+        if (type == "pkg") type = "package";
+        if (type == "proj") type = "project";
+
+        if (type != "project" && type != "package") {
+            throw runtime_error("Unknown template '" + type + "'. Available: project, package");
+        }
+
+        fs::path exec_dir = get_vek_dir();
+        fs::path template_dir = exec_dir / "templates" / type;
+        if (!fs::exists(template_dir)) {
+            throw runtime_error("Template folder not found: " + template_dir.string());
+        }
+    
+        fs::path target_dir = fs::current_path() / opts.input;
+        if (fs::exists(target_dir)) {
+            throw runtime_error("Directory already exists: " + opts.input);
+        }
+
+        // Copy template files
+        fs::copy(template_dir, target_dir, fs::copy_options::recursive);
+
+        // Replaces {{PROJECT_NAME}} 
+        fs::path toml_path = target_dir / "vek.toml";
+        if (fs::exists(toml_path)) {
+            ifstream in(toml_path);
+            string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            in.close();
+
+            string pkg_id = opts.input;
+            if (type == "package") {
+                for (char& c : pkg_id) {
+                    if (c == '-') c = '_'; // so it wouldn't become TokenType::MINUS
+                }
+            }
+
+            size_t pos = 0;
+            while ((pos = content.find("{{PROJECT_NAME}}", pos)) != string::npos) {
+                content.replace(pos, 16, pkg_id);
+                pos += pkg_id.size();
+            }
+
+            ofstream out(toml_path);
+            out << content;
+        }
+
+        cout << "Created " << type << " '" << opts.input << "'!\n";
         return 0;
     }
     
