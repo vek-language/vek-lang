@@ -45,7 +45,7 @@ inline void load_manifest(const fs::path& path, Manifest& manifest) {
     if (!fs::exists(cfg)) return;
 
     ifstream file(cfg);
-    string line, section = "app";
+    string line, section = "project";
     fs::path icon_rel;
 
     while (getline(file, line)) {
@@ -74,7 +74,7 @@ inline void load_manifest(const fs::path& path, Manifest& manifest) {
             val = val.substr(1, val.size() - 2);
         }
 
-        if (section == "app" || section == "package") {
+        if (section == "project" || section == "package") {
             if (key == "name")             manifest.metadata.name = val;
             else if (key == "version")     manifest.metadata.version = val;
             else if (key == "author")      manifest.metadata.author = val;
