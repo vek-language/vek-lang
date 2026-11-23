@@ -16,10 +16,12 @@ cmake-build-*/
 !libs/
 !libs/**/*.vek
 
-!assets/
-!assets/templates/
-!assets/templates/**
-!assets/templates/project/
-!assets/templates/project/**
-!assets/templates/project/build/
-!assets/templates/project/build/**
+!VekLang/
+!VekLang/templates/
+!VekLang/templates/**
+!VekLang/templates/project/
+!VekLang/templates/project/**
+!VekLang/templates/project/build/
+!VekLang/templates/project/build/**
+!VekLang/templates/vek-package/
+!VekLang/templates/vek-package/**
