@@ -16,7 +16,7 @@
 #include "parser.hpp"
 #include "bytecode.hpp"
 #include "token.hpp"
-#include "metadata.hpp"
+#include "manifest.hpp"
 
 using std::runtime_error;
 using std::vector;
@@ -63,6 +63,7 @@ private:
     SourceLocation current_loc{0, 1};
 
     fs::path exec_dir;
+    fs::path project_dir;
     fs::path src_file;
 
     // Scope helpers
@@ -169,18 +170,67 @@ private:
     // Module loading
     fs::path resolve_load_path(LoadStmt* stmt, const fs::path& current_file) {
         fs::path resolved;
+
         if (stmt->is_stdlib) {
-            // Resolve relative to vek executable directory
+            // Check project packages
+            fs::path packages_root = project_dir / ".vek" / "packages";
+            fs::path pkg_dir = packages_root / stmt->filepath;
+            Manifest pkg_manifest;
+
+            if (fs::exists(pkg_dir) && fs::is_directory(pkg_dir)) {
+                load_manifest(pkg_dir / "vek.toml", pkg_manifest);
+            } else if (fs::exists(packages_root)) {
+                for (const auto& dir_entry : fs::directory_iterator(packages_root)) {
+                    if (!dir_entry.is_directory()) continue;
+                    Manifest candidate;
+                    load_manifest(dir_entry.path() / "vek.toml", candidate);
+                    if (candidate.metadata.name == stmt->filepath) {
+                        pkg_dir = dir_entry.path();
+                        pkg_manifest = std::move(candidate);
+                        break;
+                    }
+                }
+            }
+
+            if (fs::exists(pkg_dir) && fs::is_directory(pkg_dir)) {
+                std::string entry = pkg_manifest.entry.empty() ? "init.vek" : pkg_manifest.entry;
+                resolved = fs::weakly_canonical(pkg_dir / entry);
+
+                if (!fs::exists(resolved)) {
+                    report_error(
+                        current_loc,
+                        "Package '" + stmt->filepath + "' entry file not found: '" + entry + "'"
+                    );
+                }
+                return resolved;
+            }
+
+            // Fallback to built-in stdlib
             fs::path base = exec_dir.empty() ? fs::current_path() : exec_dir;
-            resolved = base / "libs" / (stmt->filepath + ".vek");
-        } else {
-            // Resolve relative to the directory of the file doing the "load"
-            fs::path parent = current_file.has_parent_path()
-                ? current_file.parent_path()
-                : fs::current_path();
-            resolved = parent / (stmt->filepath + ".vek");
+            resolved = fs::weakly_canonical(base / "libs" / (stmt->filepath + ".vek"));
+
+            if (!fs::exists(resolved)) {
+                report_error(
+                    current_loc,
+                    "Module '" + stmt->filepath + "' not found in project packages or standard library."
+                );
+            }
+            return resolved;
         }
-        return fs::weakly_canonical(resolved);
+
+        // Resolve relative to the file doing the "load" (quoted)
+        fs::path parent = current_file.has_parent_path()
+            ? current_file.parent_path()
+            : fs::current_path();
+        resolved = fs::weakly_canonical(parent / (stmt->filepath + ".vek"));
+
+        if (!fs::exists(resolved)) {
+            report_error(
+                current_loc,
+                "File not found: '" + stmt->filepath + ".vek'"
+            );
+        }
+        return resolved;
     }
 
     void parse_and_register_module(LoadStmt* stmt, const fs::path& current_file) {
@@ -951,8 +1001,20 @@ public:
     {    
         src_file = fs::weakly_canonical(entry_file);
         exec_dir = executable_dir.empty() ? fs::path{} : fs::weakly_canonical(executable_dir);
+        project_dir = fs::weakly_canonical(src_file).parent_path();
+        
+        fs::path probe = project_dir;
+        while (!probe.empty() && probe != probe.root_path()) {
+            if (fs::exists(probe / "vek.toml") || fs::exists(probe / ".vek")) {
+                project_dir = probe;
+                break;
+            }
+            probe = probe.parent_path();
+        }
 
-        load_metadata(src_file, bytecode.metadata);
+        Manifest manifest;
+        load_manifest(src_file, manifest);
+        bytecode.metadata = manifest.metadata;
         push_scope();
 
         // Register functions, modules and structs

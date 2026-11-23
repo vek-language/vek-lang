@@ -1,0 +1,8 @@
+[app]
+name        = "Project"
+version     = "1.2.0"
+author      = "Daniel"
+description = "A custom VEK project!"
+
+[dependencies]
+package = "vek-language/vek-package@v0.1.0"

@@ -8,8 +8,8 @@
 #include <variant>
 #include <unordered_map>
 
-#include "./metadata.hpp"
-#include "./token.hpp"
+#include "manifest.hpp"
+#include "token.hpp"
 
 using std::variant;
 using std::string;
