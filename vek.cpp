@@ -202,7 +202,7 @@ int main(int argc, char* argv[]) {
 
                 size_t pos = 0;
                 while ((pos = content.find("{{NAME}}", pos)) != string::npos) {
-                    content.replace(pos, 16, pkg_id);
+                    content.replace(pos, 8, pkg_id);
                     pos += pkg_id.size();
                 }
 
