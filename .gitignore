@@ -13,8 +13,8 @@ build-release/*
 cmake-build-*/
 
 # Don't ignore
-!libs/
-!libs/**/*.vek
+!VekLang/libs/
+!VekLang/libs/**/*.vek
 
 !VekLang/
 !VekLang/templates/
