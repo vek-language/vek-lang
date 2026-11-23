@@ -206,7 +206,13 @@ private:
             }
 
             // Fallback to built-in stdlib
-            fs::path base = exec_dir.empty() ? fs::current_path() : exec_dir;
+            fs::path base;
+            if (const char* env_home = std::getenv("VEK_HOME"); env_home && *env_home) {
+                base = env_home;
+            } else {
+                base = exec_dir.empty() ? fs::current_path() : exec_dir;
+            }
+
             resolved = fs::weakly_canonical(base / "libs" / (stmt->filepath + ".vek"));
 
             if (!fs::exists(resolved)) {

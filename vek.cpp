@@ -53,10 +53,11 @@ string read_file(const string& path) {
 static void print_usage(std::ostream& os) {
     os << "====================================================\n"
           "Usage:\n"
-          "  vek version                          - Print compiler version\n"
-          "  vek info  <file.vkc>                 - Print metadata of a compiled file\n"
-          "  vek build <file.vek> [-o <dir|file>] - Compile <file>.vek\n"
-          "  vek run   <file.vek>                 - Compile and execute\n"
+          "  vek version                                - Print compiler version\n"
+          "  vek create <name>     [<project|package>]  - Create a VEK project\n"
+          "  vek info   <file.vkc>                      - Print metadata of a compiled file\n"
+          "  vek build  <file.vek> [-o <dir|file>]      - Compile <file>.vek\n"
+          "  vek run    <file.vek>                      - Compile and execute\n"
           "====================================================\n";
 }
 
@@ -91,7 +92,7 @@ static int parse_args(int argc, char* argv[], Options& opts) {
         return 0;
     }
 
-    if (opts.command != "build" && opts.command != "run" && opts.command != "info") {
+    if (opts.command != "build" && opts.command != "run" && opts.command != "info" && opts.command != "create") {
         cerr << "Unknown command: " << opts.command << "\n";
         print_usage(cerr);
         return -1;
@@ -149,6 +150,10 @@ int main(int argc, char* argv[]) {
     int parsed = parse_args(argc, argv, opts);
     if (parsed == 0) return 0;
     if (parsed < 0)  return 1;
+
+    if (opts.command == "create") {
+        return 0;
+    }
     
     if (opts.command == "info") {
         if (!opts.out.empty()) {
