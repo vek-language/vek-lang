@@ -37,6 +37,7 @@ You can see the docs [here](https://github.com/vek-language/vek-lang/tree/mavin/
 - [x] `&&` and `||`
 - [x] Structs
 - [x] String manipulation functions 
+- [x] Package manager
 - [ ] Classes
 
 **Code that shows capabilities (run with `./main {filename}.vek`)**
