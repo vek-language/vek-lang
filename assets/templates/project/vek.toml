@@ -1,6 +1,6 @@
 [app]
 name        = "Project"
-version     = "1.2.0"
+version     = "0.0.1"
 author      = "Daniel"
 description = "A custom VEK project!"
 
