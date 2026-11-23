@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(vek_core STATIC
     # Add .cpp's after implementation.
-    src/parser.cpp
+    src/paths.cpp
 )
 
 target_include_directories(vek_core PUBLIC headers)

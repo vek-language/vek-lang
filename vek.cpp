@@ -19,6 +19,7 @@
 #include "./natives/string.hpp"
 
 #include "./configs/config.hpp"
+#include "./headers/paths.hpp"
 
 namespace fs = std::filesystem;
 using std::runtime_error;
@@ -197,7 +198,7 @@ int main(int argc, char* argv[]) {
 
         register_all_natives(bytecode);
 
-        auto exec_dir = fs::weakly_canonical(fs::path(argv[0])).parent_path();
+        auto exec_dir = get_vek_dir();
         compiler.compile(ast, bytecode, opts.input, exec_dir);
 
         if (opts.command == "build") {
