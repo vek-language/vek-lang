@@ -1,6 +1,6 @@
 [package]
-name        = "package" # load <name>
+name        = "{{NAME}}" # load {{NAME}};
 version     = "0.0.1"
-author      = "Daniel"
+author      = "Unknown"
 description = "Test package for VekLang"
 entry       = "src/package.vek"
