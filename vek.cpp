@@ -102,7 +102,11 @@ static int parse_args(int argc, char* argv[], Options& opts) {
     }
 
     if (argc < 3) {
-        cerr << "[Error] '" << opts.command << "' requires a <file.ext> argument\n";
+        if (opts.command == "create") {
+            cerr << "[Error] 'create' requires a <name> argument\n";
+        } else {
+            cerr << "[Error] '" << opts.command << "' requires a <file.ext> argument\n";
+        }
         print_usage(cerr);
         return -1;
     }
@@ -121,6 +125,8 @@ static int parse_args(int argc, char* argv[], Options& opts) {
                 return -1;
             }
             opts.out = argv[++i];
+        } else if (opts.command == "create" && opts.template_type.empty()) {
+            opts.template_type = arg;
         } else {
             cerr << "[Error] unknown argument: " << arg << "\n";
             return -1;
@@ -149,74 +155,71 @@ static fs::path resolve_output(const Options& opts) {
 }
 
 int main(int argc, char* argv[]) {
-    Options opts;
-    int parsed = parse_args(argc, argv, opts);
-    if (parsed == 0) return 0;
-    if (parsed < 0)  return 1;
+    try {
+        Options opts;
+        int parsed = parse_args(argc, argv, opts);
+        if (parsed == 0) return 0;
+        if (parsed < 0)  return 1;
 
-    if (opts.command == "create") {
-        if (opts.input.empty()) {
-            throw runtime_error("Missing project name. Usage: vek create <name> [project|package]");
-        }
+        if (opts.command == "create") {
+            if (opts.input.empty()) {
+                throw runtime_error("Missing project name. Usage: vek create <name> [project|package]");
+            }
 
-        string type = opts.template_type.empty() ? "project" : opts.template_type;
-        if (type == "pkg") type = "package";
-        if (type == "proj") type = "project";
+            string type = opts.template_type.empty() ? "project" : opts.template_type;
+            if (type == "pkg") type = "package";
+            if (type == "proj") type = "project";
 
-        if (type != "project" && type != "package") {
-            throw runtime_error("Unknown template '" + type + "'. Available: project, package");
-        }
+            if (type != "project" && type != "package") {
+                throw runtime_error("Unknown template '" + type + "'. Available: project, package");
+            }
 
-        fs::path exec_dir = get_vek_dir();
-        fs::path template_dir = exec_dir / "templates" / type;
-        if (!fs::exists(template_dir)) {
-            throw runtime_error("Template folder not found: " + template_dir.string());
-        }
-    
-        fs::path target_dir = fs::current_path() / opts.input;
-        if (fs::exists(target_dir)) {
-            throw runtime_error("Directory already exists: " + opts.input);
-        }
+            fs::path exec_dir = get_vek_dir();
+            fs::path template_dir = exec_dir / "templates" / type;
+            if (!fs::exists(template_dir)) {
+                throw runtime_error("Template folder not found: " + template_dir.string());
+            }
 
-        // Copy template files
-        fs::copy(template_dir, target_dir, fs::copy_options::recursive);
+            fs::path target_dir = fs::current_path() / opts.input;
+            if (fs::exists(target_dir)) {
+                throw runtime_error("Directory already exists: " + opts.input);
+            }
 
-        // Replaces {{PROJECT_NAME}} 
-        fs::path toml_path = target_dir / "vek.toml";
-        if (fs::exists(toml_path)) {
-            ifstream in(toml_path);
-            string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-            in.close();
+            fs::copy(template_dir, target_dir, fs::copy_options::recursive);
 
-            string pkg_id = opts.input;
-            if (type == "package") {
-                for (char& c : pkg_id) {
-                    if (c == '-') c = '_'; // so it wouldn't become TokenType::MINUS
+            fs::path toml_path = target_dir / "vek.toml";
+            if (fs::exists(toml_path)) {
+                ifstream in(toml_path);
+                string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                in.close();
+
+                string pkg_id = opts.input;
+                if (type == "package") {
+                    for (char& c : pkg_id) {
+                        if (c == '-') c = '_'; // prevent TokenType::MINUS on `load`
+                    }
                 }
+
+                size_t pos = 0;
+                while ((pos = content.find("{{PROJECT_NAME}}", pos)) != string::npos) {
+                    content.replace(pos, 16, pkg_id);
+                    pos += pkg_id.size();
+                }
+
+                ofstream out(toml_path);
+                out << content;
             }
 
-            size_t pos = 0;
-            while ((pos = content.find("{{PROJECT_NAME}}", pos)) != string::npos) {
-                content.replace(pos, 16, pkg_id);
-                pos += pkg_id.size();
+            cout << "Created " << type << " '" << opts.input << "'!\n";
+            return 0;
+        }
+
+        if (opts.command == "info") {
+            if (!opts.out.empty()) {
+                throw runtime_error("-o is not valid for 'info'");
             }
 
-            ofstream out(toml_path);
-            out << content;
-        }
-
-        cout << "Created " << type << " '" << opts.input << "'!\n";
-        return 0;
-    }
-    
-    if (opts.command == "info") {
-        if (!opts.out.empty()) {
-            cerr << "[Error] -o is not valid for 'info'\n";
-            return 1;
-        }
-        try {
             Bytecode bc = Serializer::load(opts.input);
-
             if (bc.metadata.name.empty() && bc.metadata.version.empty()
                 && bc.metadata.author.empty() && bc.metadata.description.empty()) {
                 cout << "(no metadata)\n";
@@ -231,14 +234,10 @@ int main(int argc, char* argv[]) {
                 if (!bc.metadata.description.empty())
                     cout << bc.metadata.description << "\n";
             }
-        } catch (const std::exception& e) {
-            cerr << "\n[Error] " << e.what() << "\n";
-            return 1;
+            return 0;
         }
-        return 0;
-    }
 
-    try {
+        // Build/Run
         string source = read_file(opts.input);
 
         Lexer lexer(source);
@@ -263,7 +262,10 @@ int main(int argc, char* argv[]) {
             vm.run(bytecode);
         }
     } catch (const std::exception& e) {
-        cerr << "\n[Error] " << e.what() << "\n";
+        cerr << "[Error] " << e.what() << "\n";
+        return 1;
+    } catch (...) {
+        cerr << "[Error] An unexpected error occurred.\n";
         return 1;
     }
 
