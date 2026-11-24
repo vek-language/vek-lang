@@ -25,14 +25,14 @@ func rand_range(int64 max) int64 {
 }
 
 // Returns true with probability p (0.0 to 1.0)
-func chance(float64 p) bool {
+func rand_chance(float64 p) bool {
     if (p <= 0.0) { ret false; }
     if (p >= 1.0) { ret true; }
     ret random() < p;
 }
 
 // Returns -1 or 1
-func sign() int {
+func rand_sign() int {
     if (chance(0.5)) { ret 1; }
     ret -1;
 }
