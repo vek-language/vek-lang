@@ -6,8 +6,9 @@
 #include <string>
 #include <variant>
 #include <vector>
-#include "../headers/bytecode.hpp"
-#include "../headers/token.hpp"
+
+#include "bytecode.hpp"
+#include "token.hpp"
 
 namespace detail {
     // convert argument position to VM stack index

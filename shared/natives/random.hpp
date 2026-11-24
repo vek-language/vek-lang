@@ -6,9 +6,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include "./shared.hpp"
-#include "../headers/bytecode.hpp"
-#include "../headers/token.hpp"
+#include "shared.hpp"
+#include "bytecode.hpp"
+#include "token.hpp"
 
 namespace detail {
     inline std::mt19937_64& rng() {

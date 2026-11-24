@@ -8,18 +8,18 @@
 #include <vector>
 #include <unordered_map>
 
-#include "./headers/lexer.hpp"
-#include "./headers/parser.hpp"
-#include "./headers/compiler.hpp"
-#include "./headers/vm.hpp"
-#include "./headers/serializer.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
+#include "compiler.hpp"
+#include "vm.hpp"
+#include "serializer.hpp"
 
 // Native functions
-#include "./natives/random.hpp"
-#include "./natives/string.hpp"
+#include "random.hpp"
+#include "string.hpp"
 
-#include "./configs/config.hpp"
-#include "./headers/paths.hpp"
+#include "config.hpp"
+#include "paths.hpp"
 
 namespace fs = std::filesystem;
 using std::runtime_error;

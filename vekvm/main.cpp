@@ -2,14 +2,14 @@
 #include <iostream>
 #include <string>
 
-#include "./headers/vm.hpp"
-#include "./headers/serializer.hpp"
+#include "vm.hpp"
+#include "serializer.hpp"
 
 // Native functions
-#include "./natives/random.hpp"
-#include "./natives/string.hpp"
+#include "random.hpp"
+#include "string.hpp"
 
-#include "./configs/config.hpp"
+#include "config.hpp"
 
 using std::string;
 

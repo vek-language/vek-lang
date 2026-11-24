@@ -7,8 +7,9 @@
 #include <variant>
 #include <stdexcept>
 #include <vector>
+
 #include "bytecode.hpp"
-#include "../configs/config.hpp"
+#include "config.hpp"
 
 using std::runtime_error;
 using std::array;

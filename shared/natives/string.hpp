@@ -7,9 +7,9 @@
 #include <string>
 #include <vector>
 
-#include "../headers/bytecode.hpp"
-#include "../headers/token.hpp"
-#include "./shared.hpp"
+#include "shared.hpp"
+#include "bytecode.hpp"
+#include "token.hpp"
 
 inline void register_string_natives(Bytecode& bc) {
     // str_len(s)

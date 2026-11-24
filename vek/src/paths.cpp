@@ -1,4 +1,4 @@
-#include "../headers/paths.hpp"
+#include "paths.hpp"
 #include <cstdlib>
 
 #ifdef _WIN32
