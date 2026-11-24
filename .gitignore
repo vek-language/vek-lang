@@ -2,16 +2,26 @@
 *.exe
 *.vkc
 *.vek
-vek-lang_v*/
 
 # IDE
 .idea/
 .vscode/
 
 # CMake
-build/
-build-release/
+build/*
+build-release/*
 cmake-build-*/
 
 # Don't ignore
-!/libs/**/*.vek
+!release/*/libs/
+!release/*/libs/**/*.vek
+
+!release/*/
+!release/*/templates/
+!release/*/templates/**
+!release/*/templates/project/
+!release/*/templates/project/**
+!release/*/templates/project/build/
+!release/*/templates/project/build/**
+!release/*/templates/vek-package/
+!release/*/templates/vek-package/**

@@ -1,0 +1,48 @@
+# random.vek
+# Standard Random Library for VekLang
+
+// Returns a float64 in [0.0, 1.0)
+func random() float64 {
+    ret rand_f64();
+}
+
+// Returns a float64 in [min, max)
+func rand(float64 min, float64 max) float64 {
+    if (min >= max) { ret min; }
+    ret min + random() * (max - min);
+}
+
+// Returns an int64 in [min, max] (inclusive)
+func rand_int(int64 min, int64 max) int64 {
+    if (min >= max) { ret min; }
+    ret rand_i64(max + 1, min);
+}
+
+// Returns an int64 in [0, max - 1]
+func rand_range(int64 max) int64 {
+    if (max <= 0) { ret 0; }
+    ret rand_i64(max);
+}
+
+// Returns true with probability p (0.0 to 1.0)
+func chance(float64 p) bool {
+    if (p <= 0.0) { ret false; }
+    if (p >= 1.0) { ret true; }
+    ret random() < p;
+}
+
+// Returns -1 or 1
+func sign() int {
+    if (chance(0.5)) { ret 1; }
+    ret -1;
+}
+
+// Sets a deterministic RNG seed
+func seed(int64 s) {
+    rand_seed(s);
+}
+
+// Resets RNG to system entropy
+func reset_seed() {
+    rand_seed();
+}
