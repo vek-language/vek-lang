@@ -105,6 +105,8 @@ enum class OpCode {
     OP_ARRAY_PUSH = 0x33,
     OP_ARRAY_POP = 0x34,
 
+    OP_ARRAY_SIZE = 0x35,
+
     // OOP
     OP_NEW_STRUCT = 0x40,
     OP_GET_MEMBER = 0x41,

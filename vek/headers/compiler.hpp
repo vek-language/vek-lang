@@ -831,6 +831,10 @@ private:
                 if (!method_call->arguments.empty()) report_error(current_loc, "pop expects 0 arguments");
                 bytecode.emit(OpCode::OP_ARRAY_POP);
             } 
+            else if (method_call->method == "size") {
+                if (!method_call->arguments.empty()) { report_error(current_loc, "'.size()' takes 0 arguments."); }
+                bytecode.emit(OpCode::OP_ARRAY_SIZE);
+            } 
             else {
                 report_error(current_loc, "Unknown array method: " + method_call->method);
             }

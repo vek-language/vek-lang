@@ -443,6 +443,15 @@ public:
                     push(popped);
                     break;
                 }
+                case OpCode::OP_ARRAY_SIZE: {
+                    Value arr_val = pop();
+                    if (!holds_alternative<shared_ptr<ArrayObject>>(arr_val)) {
+                        throw runtime_error("Not an array");
+                    }
+                    auto arr = get<shared_ptr<ArrayObject>>(arr_val);
+                    push(Value(static_cast<int64_t>(arr->elements.size())));
+                    break;
+                }
 
                 // Functions
                 case OpCode::OP_CALL: {
