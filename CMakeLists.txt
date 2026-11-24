@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vek LANGUAGES CXX)
+project(vek LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,7 +24,6 @@ endif()
 # VEK Compiler & DK
 add_executable(vek
     vek/main.cpp
-    
     vek/src/paths.cpp
     ${VEK_ICON_RC}
 )
@@ -39,8 +38,29 @@ add_executable(vekvm
 target_include_directories(vekvm PRIVATE vekvm/headers)
 target_link_libraries(vekvm PRIVATE vek_core)
 
+# VEK Package Manager
+add_executable(vekp
+    vekp/main.cpp
+    external/miniz/miniz.c
+    ${VEK_ICON_RC}
+)
+target_include_directories(vekp PRIVATE
+    vekp/headers
+    external
+    external/miniz
+)
+target_link_libraries(vekp PRIVATE vek_core)
+
+if(WIN32)
+    target_link_libraries(vekp PRIVATE winhttp)
+else()
+    find_package(CURL REQUIRED)
+    target_link_libraries(vekp PRIVATE CURL::libcurl)
+endif()
+
 # Standalone static linking on MinGW
 if(MINGW)
     target_link_options(vek PRIVATE -s -static -static-libgcc -static-libstdc++)
     target_link_options(vekvm PRIVATE -s -static -static-libgcc -static-libstdc++)
+    target_link_options(vekp PRIVATE -s -static -static-libgcc -static-libstdc++)
 endif()
