@@ -18,7 +18,7 @@ It is designed to be simple, bridging the syntax of C++ and Java with some of th
 # 1. Configure the project
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-# 2. Build the compiler (vek) and VM (vekvm)
+# 2. Build the compiler (vek), package manager (vekp) and VM (vekvm)
 cmake --build build --config Release
 ```
 
