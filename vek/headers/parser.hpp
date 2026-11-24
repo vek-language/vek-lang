@@ -30,11 +30,21 @@ private:
     const vector<Token>& tokens;
     size_t current = 0;
 
-    // Helper functions
+    // HELPERS
     bool is_at_end() const { return current >= tokens.size(); }
-    bool check(TokenType type) const { return !is_at_end() && tokens[current].type == type; }
+
+    bool check(TokenType type) const {
+        return !is_at_end() && tokens[current].type == type;
+    }
+
     Token previous() const { return tokens[current - 1]; }
-    bool match(TokenType type) { if (!check(type)) return false; ++current; return true; }
+
+    bool match(TokenType type) {
+        if (!check(type)) return false;
+        ++current;
+        return true;
+    }
+
     Token consume(TokenType expected, const string& message) {
         if (!check(expected)) report_error(previous().location, message);
         return tokens[current++];
@@ -47,12 +57,21 @@ private:
         ++current;
     }
 
+    // Try to match any of several token types at once.
+    bool match_any(std::initializer_list<TokenType> types) {
+        for (TokenType t : types) {
+            if (match(t)) return true;
+        }
+        return false;
+    }
+
     template <typename T>
     unique_ptr<T> set_loc(unique_ptr<T> node, const Token& tok) {
         node->location = tok.location;
         return node;
     }
 
+    // ASSIGNMENT / EXPRESSIONS
     // Works just like declaration, but doesn't consumes semicolon
     unique_ptr<Stmt> parse_for_initializer() {
         if (check(TokenType::LET) || check(TokenType::CONST)) {
@@ -77,31 +96,34 @@ private:
     unique_ptr<Expr> parse_assignment() {
         auto expr = parse_logic();
 
-        if (match(TokenType::EQUALS) ||
-            match(TokenType::PLUS_EQUALS) || match(TokenType::MINUS_EQUALS) ||
-            match(TokenType::STAR_EQUALS) || match(TokenType::SLASH_EQUALS)) {
-
-            TokenType op = previous().type;
-            TokenType inner_op = TokenType::EQUALS;
-
-            if (op == TokenType::PLUS_EQUALS) inner_op = TokenType::PLUS;
-            else if (op == TokenType::MINUS_EQUALS) inner_op = TokenType::MINUS;
-            else if (op == TokenType::STAR_EQUALS) inner_op = TokenType::STAR;
-            else if (op == TokenType::SLASH_EQUALS) inner_op = TokenType::SLASH;
-
-            // Right-associative (allows a = b = 5)
-            auto value = parse_assignment();
-
-            if (!dynamic_cast<VariableExpr*>(expr.get()) &&
-                !dynamic_cast<ArrayAccessExpr*>(expr.get()) &&
-                !dynamic_cast<FieldAccessExpr*>(expr.get())) {
-                report_error(previous().location, "Invalid assignment target.");
-            }
-
-            return set_loc(make_unique<AssignExpr>(move(expr), inner_op, move(value)), previous());
+        if (!match_any({
+                TokenType::EQUALS,
+                TokenType::PLUS_EQUALS,
+                TokenType::MINUS_EQUALS,
+                TokenType::STAR_EQUALS,
+                TokenType::SLASH_EQUALS,
+            })) {
+            return expr;
         }
 
-        return expr;
+        TokenType op = previous().type;
+        TokenType inner_op = TokenType::EQUALS;
+
+        if (op == TokenType::PLUS_EQUALS) inner_op = TokenType::PLUS;
+        else if (op == TokenType::MINUS_EQUALS) inner_op = TokenType::MINUS;
+        else if (op == TokenType::STAR_EQUALS) inner_op = TokenType::STAR;
+        else if (op == TokenType::SLASH_EQUALS) inner_op = TokenType::SLASH;
+
+        // Right-associative (allows a = b = 5)
+        auto value = parse_assignment();
+
+        if (!dynamic_cast<VariableExpr*>(expr.get()) &&
+            !dynamic_cast<ArrayAccessExpr*>(expr.get()) &&
+            !dynamic_cast<FieldAccessExpr*>(expr.get())) {
+            report_error(previous().location, "Invalid assignment target.");
+        }
+
+        return set_loc(make_unique<AssignExpr>(move(expr), inner_op, move(value)), previous());
     }
 
     unique_ptr<Expr> parse_logic() {
@@ -114,82 +136,91 @@ private:
         return expr;
     }
 
-    // Parsing
+    // STATEMENTS
     unique_ptr<Stmt> parse_statement() {
-        if (match(TokenType::LOAD)) {
-            Token keyword = previous();
-            string path;
-            bool is_stdlib = false;
-
-            if (match(TokenType::STR_LITERAL)) {
-                // User files
-                path = previous().text;
-                is_stdlib = false;
-            } else if (match(TokenType::IDENTIFIER)) {
-                // Standard lib files
-                path = previous().text;
-                is_stdlib = true;
-            } else {
-                report_error(previous().location, "Expected file path or module name after 'load'");
-            }
-
-            consume_semicolon();
-            return set_loc(make_unique<LoadStmt>(path, is_stdlib), keyword);
-        }
-
-        if (check(TokenType::LET) || check(TokenType::CONST)) {
-            return parse_declaration();
-        }
-
+        if (match(TokenType::LOAD))   return parse_load();
+        if (check(TokenType::LET) || check(TokenType::CONST)) return parse_declaration();
         if (check(TokenType::STRUCT)) return parse_struct();
-        if (check(TokenType::CLASS)) return parse_class();
-        if (check(TokenType::FUNC)) return parse_function();
-        if (check(TokenType::IF)) return parse_if();
-        if (check(TokenType::WHILE)) return parse_while();
-        if (check(TokenType::FOR)) return parse_for();
+        if (check(TokenType::CLASS))  return parse_class();
+        if (check(TokenType::FUNC))   return parse_function();
+        if (check(TokenType::IF))     return parse_if();
+        if (check(TokenType::WHILE))  return parse_while();
+        if (check(TokenType::FOR))    return parse_for();
 
-        if (match(TokenType::BREAK)) {
-            Token keyword = previous();
-            consume_semicolon();
-            return set_loc(make_unique<BreakStmt>(), keyword);
-        };
-        if (match(TokenType::CONTINUE)) {
-            Token keyword = previous();
-            consume_semicolon();
-            return set_loc(make_unique<ContinueStmt>(), keyword);
-        };
+        if (match(TokenType::BREAK))     return parse_break();
+        if (match(TokenType::CONTINUE))  return parse_continue();
+        if (match(TokenType::PRINT))     return parse_print();
+        if (match(TokenType::INPUT))     return parse_input();
 
-        if (match(TokenType::PRINT)) {
-            Token keyword = previous();
-            consume(TokenType::LPAREN, "Expected '(' after 'print'");
-            auto expr = parse_logic();
-            consume(TokenType::RPAREN, "Expected ')' after print expression");
-            consume_semicolon();
-            return set_loc(make_unique<PrintStmt>(move(expr)), keyword);
-        }
-
-        if (match(TokenType::INPUT)) {
-            Token keyword = previous();
-            consume(TokenType::LPAREN, "Expected '(' after 'input'");
-
-            auto expr = parse_logic();
-            auto* var_target = dynamic_cast<VariableExpr*>(expr.get());
-
-            consume(TokenType::RPAREN, "Expected ')' after input expression");
-            consume_semicolon();
-            return set_loc(make_unique<InputStmt>(move(expr)), keyword);
-        }
-
-        if (check(TokenType::RET)) {
-            Token keyword = consume(TokenType::RET, "Expected 'ret'");
-            unique_ptr<Expr> value = nullptr;
-            if (!check(TokenType::SEMICOLON)) value = parse_logic();
-            consume_semicolon();
-            return set_loc(make_unique<ReturnStmt>(move(value)), keyword);
-        }
-
+        if (check(TokenType::RET)) return parse_return();
         if (check(TokenType::LBRACE)) return parse_block();
 
+        return parse_expression_statement();
+    }
+
+    unique_ptr<Stmt> parse_load() {
+        Token keyword = previous();
+        string path;
+        bool is_stdlib = false;
+
+        if (match(TokenType::STR_LITERAL)) {
+            // User files
+            path = previous().text;
+            is_stdlib = false;
+        } else if (match(TokenType::IDENTIFIER)) {
+            // Standard lib files
+            path = previous().text;
+            is_stdlib = true;
+        } else {
+            report_error(previous().location, "Expected file path or module name after 'load'");
+        }
+
+        consume_semicolon();
+        return set_loc(make_unique<LoadStmt>(path, is_stdlib), keyword);
+    }
+
+    unique_ptr<Stmt> parse_break() {
+        Token keyword = previous();
+        consume_semicolon();
+        return set_loc(make_unique<BreakStmt>(), keyword);
+    }
+
+    unique_ptr<Stmt> parse_continue() {
+        Token keyword = previous();
+        consume_semicolon();
+        return set_loc(make_unique<ContinueStmt>(), keyword);
+    }
+
+    unique_ptr<Stmt> parse_print() {
+        Token keyword = previous();
+        consume(TokenType::LPAREN, "Expected '(' after 'print'");
+        auto expr = parse_logic();
+        consume(TokenType::RPAREN, "Expected ')' after print expression");
+        consume_semicolon();
+        return set_loc(make_unique<PrintStmt>(move(expr)), keyword);
+    }
+
+    unique_ptr<Stmt> parse_input() {
+        Token keyword = previous();
+        consume(TokenType::LPAREN, "Expected '(' after 'input'");
+
+        auto expr = parse_logic();
+        auto* var_target = dynamic_cast<VariableExpr*>(expr.get());
+
+        consume(TokenType::RPAREN, "Expected ')' after input expression");
+        consume_semicolon();
+        return set_loc(make_unique<InputStmt>(move(expr)), keyword);
+    }
+
+    unique_ptr<Stmt> parse_return() {
+        Token keyword = consume(TokenType::RET, "Expected 'ret'");
+        unique_ptr<Expr> value = nullptr;
+        if (!check(TokenType::SEMICOLON)) value = parse_logic();
+        consume_semicolon();
+        return set_loc(make_unique<ReturnStmt>(move(value)), keyword);
+    }
+
+    unique_ptr<Stmt> parse_expression_statement() {
         Token start = tokens[current];
         auto expr = parse_assignment();
         consume_semicolon();
@@ -206,6 +237,7 @@ private:
         return set_loc(make_unique<BlockStmt>(move(body)), lbrace);
     }
 
+    // DECLARATIONS
     unique_ptr<Stmt> parse_class_member() {
         if (check(TokenType::FUNC)) {
             return parse_function();
@@ -223,14 +255,14 @@ private:
         auto class_decl = set_loc(make_unique<ClassDecl>(name.text), keyword);
         while (!check(TokenType::RBRACE) && !is_at_end()) {
             // Access modifiers
-            if(match(TokenType::PUBLIC)) {
+            if (match(TokenType::PUBLIC)) {
                 consume(TokenType::LBRACE, "Expected '{' after 'public'");
                 while (!check(TokenType::RBRACE) && !is_at_end()) {
                     class_decl->public_members.push_back(parse_class_member());
                 }
                 consume(TokenType::RBRACE, "Expected '}' to close 'public' block");
 
-            } else if(match(TokenType::PRIVATE)) {
+            } else if (match(TokenType::PRIVATE)) {
                 consume(TokenType::LBRACE, "Expected '{' after 'private'");
                 while (!check(TokenType::RBRACE) && !is_at_end()) {
                     class_decl->private_members.push_back(parse_class_member());
@@ -299,7 +331,7 @@ private:
         Token keyword = consume(TokenType::FOR, "Expected 'for'");
         consume(TokenType::LPAREN, "Expected '('");
 
-        // Index
+        // Initializer
         unique_ptr<Stmt> initializer = nullptr;
         if (!check(TokenType::SEMICOLON)) {
             if (check(TokenType::LET) || check(TokenType::CONST)) {
@@ -358,15 +390,16 @@ private:
         return set_loc(make_unique<FuncDecl>(return_type, name.text, move(params), move(body)), keyword);
     }
 
+    // TYPES
     TokenType parse_type() {
-        if (match(TokenType::INT32)) return TokenType::INT32;
-        if (match(TokenType::INT64)) return TokenType::INT64;
+        if (match(TokenType::INT32))   return TokenType::INT32;
+        if (match(TokenType::INT64))   return TokenType::INT64;
         if (match(TokenType::FLOAT32)) return TokenType::FLOAT32;
         if (match(TokenType::FLOAT64)) return TokenType::FLOAT64;
-        if (match(TokenType::STR)) return TokenType::STR;
-        if (match(TokenType::CHAR)) return TokenType::CHAR;
-        if (match(TokenType::BOOL)) return TokenType::BOOL;
-        if (match(TokenType::VOID)) return TokenType::VOID;
+        if (match(TokenType::STR))     return TokenType::STR;
+        if (match(TokenType::CHAR))    return TokenType::CHAR;
+        if (match(TokenType::BOOL))    return TokenType::BOOL;
+        if (match(TokenType::VOID))    return TokenType::VOID;
 
         if (match(TokenType::IDENTIFIER)) {
             return TokenType::IDENTIFIER;
@@ -377,6 +410,7 @@ private:
 
     TokenType parse_decl_type(string& out_class_name) {
         out_class_name.clear();
+
         if (check(TokenType::INT32)
             || check(TokenType::INT64)
             || check(TokenType::FLOAT32)
@@ -388,14 +422,17 @@ private:
         {
             return parse_type();
         }
+
         if (check(TokenType::IDENTIFIER)) {
             out_class_name = tokens[current].text;
             ++current;
             return TokenType::IDENTIFIER;
         }
+
         report_error(previous().location, "Expected a type or class name");
     }
 
+    // VARIABLE DECLARATIONS
     unique_ptr<Stmt> parse_declaration() {
         Token keyword = tokens[current];
         bool is_const = false;
@@ -448,16 +485,19 @@ private:
         return set_loc(make_unique<VarDecl>(type, name.text, is_array, is_const, move(array_size), move(initializer), move(type_name)), keyword);
     }
 
+    // EXPRESSIONS
     unique_ptr<Expr> parse_expression() {
         auto expr = parse_term();
-        while (match(TokenType::PLUS)
-            || match(TokenType::MINUS)
-            || match(TokenType::GREATER_THAN)
-            || match(TokenType::LESS_THAN)
-            || match(TokenType::GREATER_EQUAL)
-            || match(TokenType::LESS_EQUAL)
-            || match(TokenType::EQUALS_EQUALS)
-            || match(TokenType::NOT_EQUALS))
+        while (match_any({
+                TokenType::PLUS,
+                TokenType::MINUS,
+                TokenType::GREATER_THAN,
+                TokenType::LESS_THAN,
+                TokenType::GREATER_EQUAL,
+                TokenType::LESS_EQUAL,
+                TokenType::EQUALS_EQUALS,
+                TokenType::NOT_EQUALS,
+            }))
         {
             TokenType op = previous().type;
             auto right = parse_term();
@@ -561,10 +601,12 @@ private:
             Token tok = previous();
             return set_loc(make_unique<BoolLiteral>(tok.text == "true"), tok);
         }
+
         if (match(TokenType::STR_LITERAL)) {
             Token tok = previous();
             return set_loc(make_unique<StringLiteral>(tok.text), tok);
         }
+
         if (match(TokenType::CHAR_LITERAL)) {
             Token tok = previous();
             return set_loc(make_unique<CharLiteral>(tok.text[0]), tok);
@@ -572,6 +614,7 @@ private:
 
         if (match(TokenType::LBRACE)) {
             Token lbrace = previous();
+
             // Check for struct literal
             if (check(TokenType::IDENTIFIER) && current + 1 < tokens.size() && tokens[current + 1].type == TokenType::COLON) {
                 vector<pair<string, unique_ptr<Expr>>> inits;
@@ -611,6 +654,7 @@ private:
 
         if (match(TokenType::LPAREN)) {
             Token lparen = previous();
+
             // cast check
             if (check(TokenType::INT32) || check(TokenType::INT64) ||
                 check(TokenType::FLOAT32) || check(TokenType::FLOAT64) ||
@@ -628,6 +672,7 @@ private:
             consume(TokenType::RPAREN, "Expected ')'");
             return expr;
         }
+
         report_error(previous().location, "Expected a value, variable, or '(', got '" + tokens[current].text + "'");
     }
 };
