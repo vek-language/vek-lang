@@ -16,7 +16,9 @@ struct SourceLocation {
 enum class Type { INT32, INT64, FLOAT32, FLOAT64, BOOL, CHAR, STR, VOID, ARRAY, STRUCT, CLASS, UNKNOWN };
 enum class TokenType {
     // Basic
-    LOAD, CLASS, STRUCT, PUBLIC, PRIVATE, PROTECTED, THIS,
+    LOAD, CLASS, STRUCT, NAMESPACE,
+    PUBLIC, PRIVATE, PROTECTED, 
+    THIS,
     
     LET, REF, CONST, FUNC, 
     IF, ELSE, WHILE, FOR,    

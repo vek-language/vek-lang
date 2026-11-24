@@ -16,6 +16,7 @@ using std::string;
 
 inline const unordered_map<std::string, TokenType> keywords = {
     {"load", TokenType::LOAD},
+    {"namespace", TokenType::NAMESPACE},
     
     {"class", TokenType::CLASS},
     {"struct", TokenType::STRUCT},
