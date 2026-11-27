@@ -10,7 +10,7 @@ add_library(vek_core INTERFACE)
 
 target_include_directories(vek_core INTERFACE
     shared
-    shared/headers
+    shared/include
     shared/natives
 )
 target_compile_features(vek_core INTERFACE cxx_std_20)
@@ -27,7 +27,7 @@ add_executable(vek
     vek/src/paths.cpp
     ${VEK_ICON_RC}
 )
-target_include_directories(vek PRIVATE vek/headers)
+target_include_directories(vek PRIVATE vek/include)
 target_link_libraries(vek PRIVATE vek_core)
 
 # VEK Virtual Machine
@@ -35,7 +35,7 @@ add_executable(vekvm
     vekvm/main.cpp
     ${VKC_ICON_RC}
 )
-target_include_directories(vekvm PRIVATE vekvm/headers)
+target_include_directories(vekvm PRIVATE vekvm/include)
 target_link_libraries(vekvm PRIVATE vek_core)
 
 # VEK Package Manager
@@ -45,7 +45,7 @@ add_executable(vekp
     ${VEK_ICON_RC}
 )
 target_include_directories(vekp PRIVATE
-    vekp/headers
+    vekp/include
     external
     external/miniz
 )
